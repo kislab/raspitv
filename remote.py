@@ -2,7 +2,8 @@
 
 Jede Tastenquelle – HDMI-CEC, Infrarot-Empfänger, Handy-App – schickt Tasten hierher:
 
-  POST /key      {"key": "up" | "down" | "left" | "right" | "ok" | "back" | "home"}
+  POST /key      {"key": "up" | "down" | "left" | "right" | "ok" | "back" | "home" | "menu"}
+                 ("menu" = OK lange gedrückt: Kachel-Menü mit Verschieben/Ausblenden)
   GET  /status   -> {"running": "<id>" | null}
   GET  /events   Tasten als Server-Sent Events; darüber steuert die TV-Erweiterung
                  (tv-extension/) die Webseite im Player.
@@ -15,7 +16,7 @@ import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 HOST, PORT = "127.0.0.1", 8765
-KEYS = {"up", "down", "left", "right", "ok", "back", "home"}
+KEYS = {"up", "down", "left", "right", "ok", "back", "home", "menu"}
 
 
 def start(on_key, get_status):
@@ -88,7 +89,7 @@ def start(on_key, get_status):
             if key not in KEYS:
                 return self.reply({"error": "unknown key"}, 400)
             on_key(key)
-            if origin is None:  # Tasten der Erweiterung nicht an sie zurückschicken
+            if origin is None and key != "menu":  # nicht an die Erweiterung zurückschicken; "menu" gilt nur RaspiTV
                 publish(key)
             self.reply({"ok": True})
 

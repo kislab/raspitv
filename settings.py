@@ -17,6 +17,7 @@ DEFAULTS = {
     "clock_24h": True,
     "animations": True,
     "hidden": [],  # IDs ausgeblendeter Apps
+    "order": [],   # eigene Reihenfolge der Kacheln (App-IDs); fehlende Apps kommen hinten dran
     "jellyfin_url": "",  # Adresse des Jellyfin-Servers (wird im Netz gesucht)
 }
 

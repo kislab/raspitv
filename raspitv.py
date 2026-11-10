@@ -19,7 +19,7 @@ if os.environ.get("WAYLAND_DISPLAY"):
     os.environ.setdefault("QT_QPA_PLATFORM", "wayland;xcb")
 
 from PyQt5.QtCore import QLocale, QDateTime, QPointF, QRectF, Qt, QTimer, pyqtSignal
-from PyQt5.QtGui import QColor, QFont, QFontMetricsF, QLinearGradient, QPainter, QPen, QPixmap, QRadialGradient
+from PyQt5.QtGui import QColor, QFont, QFontMetricsF, QLinearGradient, QPainter, QPen, QPixmap, QPolygonF, QRadialGradient
 from PyQt5.QtWidgets import QApplication, QWidget
 
 import remote
@@ -44,6 +44,7 @@ KEYMAP = {
 HEADER, APPS = 0, 1                                   # Zeilen der Startseite
 FOCUSABLE = ("choice", "toggle", "action", "range")   # wählbare Einstellungs-Zeilen
 FOCUS_SCALE = 1.12
+LONG_PRESS = 0.6                                      # Sekunden OK halten für das Kachel-Menü
 
 
 def ease(t):
@@ -70,6 +71,10 @@ class Home(QWidget):
         self.items, self.item = [], 0  # Einstellungs-Zeilen und gewählte Zeile
         self.volume = None
         self.dialog = None             # {"text", "buttons": [(label, fn)], "index"}
+        self.menu = None               # Kachel-Menü: {"items": [(label, fn)], "index"}
+        self.moving = False            # Kachel wird gerade verschoben
+        self.ok_down = None            # Zeitpunkt, seit dem OK gedrückt gehalten wird
+        self.tile_rects = []           # zuletzt gezeichnete Kachel-Positionen
         self.running = None            # gestarteter Dienst, solange der Player läuft
         self.started = 0.0
 
@@ -97,7 +102,9 @@ class Home(QWidget):
     def refresh_apps(self):
         """Sichtbare Apps neu bestimmen (nach Änderungen in den Einstellungen)."""
         hidden = set(self.settings["hidden"])
-        self.apps = [a for a in self.all_apps if a["id"] not in hidden] or self.all_apps[:1]
+        order = {app_id: i for i, app_id in enumerate(self.settings["order"])}
+        ordered = sorted(self.all_apps, key=lambda a: order.get(a["id"], len(order) + self.all_apps.index(a)))
+        self.apps = [a for a in ordered if a["id"] not in hidden] or ordered[:1]
         self.scale = [1.0] * len(self.apps)
         self.col = min(self.col, len(self.apps) - 1)
         if self.hero not in self.apps:
@@ -108,8 +115,29 @@ class Home(QWidget):
 
     def keyPressEvent(self, event):
         key = KEYMAP.get(event.key())
+        if key == "ok" and self.long_press_possible():
+            if not event.isAutoRepeat() and self.ok_down is None:
+                self.ok_down = time.monotonic()
+                QTimer.singleShot(int(LONG_PRESS * 1000), self.check_long_press)
+            return
         if key and not (key == "ok" and event.isAutoRepeat()):
             self.handle(key)
+
+    def keyReleaseEvent(self, event):
+        if KEYMAP.get(event.key()) != "ok" or event.isAutoRepeat() or self.ok_down is None:
+            return
+        self.ok_down = None  # kurz gedrückt: normales OK
+        self.handle("ok")
+
+    def long_press_possible(self):
+        """Langes Drücken gibt es nur auf einer Kachel der Startseite."""
+        return (not self.running and not self.dialog and not self.menu and not self.moving
+                and self.view == "home" and self.row == APPS)
+
+    def check_long_press(self):
+        if self.ok_down is not None and time.monotonic() - self.ok_down >= LONG_PRESS - 0.05:
+            self.ok_down = None
+            self.handle("menu")
 
     def handle(self, key):
         if self.running:
@@ -117,6 +145,13 @@ class Home(QWidget):
                 self.go_home()
         elif self.dialog:
             self.dialog_key(key)
+        elif self.menu:
+            self.menu_key(key)
+        elif self.moving:
+            self.move_key(key)
+        elif key == "menu":
+            if self.view == "home" and self.row == APPS:
+                self.open_menu()
         elif self.view == "settings":
             self.settings_key(key)
         elif key in ("left", "right") and self.row == APPS:
@@ -148,6 +183,57 @@ class Home(QWidget):
             self.dialog["index"] = min(max(self.dialog["index"] + step, 0), len(buttons) - 1)
         elif key == "ok" and buttons:
             buttons[self.dialog["index"]][1]()
+
+    # ---------- Kachel-Menü und Verschieben ----------
+
+    def open_menu(self):
+        app = self.apps[self.col]
+        items = [("Öffnen", lambda: self.launch(app)), ("Verschieben", self.start_moving)]
+        if len(self.apps) > 1:
+            items.append(("Ausblenden", lambda: self.hide_app(app)))
+        self.menu = {"items": items, "index": 0}
+
+    def menu_key(self, key):
+        items = self.menu["items"]
+        if key in ("back", "home", "menu"):
+            self.menu = None
+        elif key in ("up", "down"):
+            step = -1 if key == "up" else 1
+            self.menu["index"] = min(max(self.menu["index"] + step, 0), len(items) - 1)
+        elif key == "ok":
+            run = items[self.menu["index"]][1]
+            self.menu = None
+            run()
+
+    def start_moving(self):
+        self.moving = True
+        self.moving_from = self.col
+
+    def move_key(self, key):
+        if key in ("left", "right"):
+            j = self.col + (-1 if key == "left" else 1)
+            if 0 <= j < len(self.apps):
+                a = self.apps
+                a[self.col], a[j] = a[j], a[self.col]
+                self.scale[self.col], self.scale[j] = self.scale[j], self.scale[self.col]
+                self.col = j
+        elif key in ("ok", "back", "home", "menu", "up", "down"):
+            self.moving = False
+            self.save_order()
+
+    def save_order(self):
+        """Reihenfolge merken: sichtbare Apps wie angeordnet, ausgeblendete an ihrem alten Platz."""
+        visible = iter(self.apps)
+        shown_ids = {a["id"] for a in self.apps}
+        order = {app_id: i for i, app_id in enumerate(self.settings["order"])}
+        full = sorted(self.all_apps, key=lambda a: order.get(a["id"], len(order) + self.all_apps.index(a)))
+        self.set("order", [next(visible)["id"] if a["id"] in shown_ids else a["id"] for a in full])
+
+    def hide_app(self, app):
+        hidden = set(self.settings["hidden"]) | {app["id"]}
+        if len(hidden) < len(self.all_apps):
+            self.set("hidden", sorted(hidden))
+            self.refresh_apps()
 
     # ---------- Dienste starten ----------
 
@@ -464,9 +550,12 @@ class Home(QWidget):
         p.drawText(QRectF(edge + slide, y, W * 0.5, 1.6 * u), Qt.AlignLeft | Qt.AlignVCenter, app.get("tag", "App").upper())
         p.setOpacity(1.0)
 
-        self.text(p, QRectF(edge, tiles_y - 2.9 * u, W, 1.5 * u), "Deine Apps", 1.1 * u, TEXT, QFont.DemiBold)
+        label = "◀ ▶  Kachel verschieben  ·  OK fertig" if self.moving else "Deine Apps"
+        self.text(p, QRectF(edge, tiles_y - 2.9 * u, W, 1.5 * u), label, 1.1 * u, TEXT, QFont.DemiBold)
         self.paint_tiles(p, edge, tiles_y, tile_w, tile_h, gap, u)
 
+        if self.menu:
+            self.paint_menu(p, W, H, u)
         if self.panel > 0:
             self.paint_settings(p, W, H, u)
         if self.dialog:
@@ -562,10 +651,13 @@ class Home(QWidget):
         """Kachelreihe: die gewählte Kachel wächst und schiebt ihre Nachbarn zur Seite."""
         x = edge - self.scroll
         radius = 0.9 * u
+        self.tile_rects = []
         for i, app in enumerate(self.apps):
             s = self.scale[i]
             w, h = tile_w * s, tile_h * s
-            rect = QRectF(x, y + (tile_h - h) / 2, w, h)
+            lift = 1.0 * u if self.moving and i == self.col else 0.0  # verschobene Kachel schwebt
+            rect = QRectF(x, y + (tile_h - h) / 2 - lift, w, h)
+            self.tile_rects.append(rect)
             x += w + gap
             if rect.right() < 0 or rect.left() > self.width():
                 continue
@@ -593,6 +685,53 @@ class Home(QWidget):
                 p.setPen(QPen(alpha("#ffffff", f), 0.16 * u))
                 p.setBrush(Qt.NoBrush)
                 p.drawRoundedRect(rect.adjusted(-d, -d, d, d), radius + d, radius + d)
+
+        # Pfeile zuletzt zeichnen, damit sie über den Nachbarkacheln liegen
+        if self.moving and self.col < len(self.tile_rects):
+            self.paint_move_arrows(p, self.tile_rects[self.col], u, self.col > 0, self.col < len(self.apps) - 1)
+
+    def paint_move_arrows(self, p, rect, u, left, right):
+        """Pfeile links/rechts an der Kachel, die gerade verschoben wird."""
+        p.setPen(Qt.NoPen)
+        r = 1.3 * u
+        cy = rect.center().y()
+        for show, cx, sign in ((left, rect.left() - 1.9 * u, -1), (right, rect.right() + 1.9 * u, 1)):
+            if not show:
+                continue
+            p.setBrush(QColor("#ffffff"))
+            p.drawEllipse(QPointF(cx, cy), r, r)
+            p.setBrush(DARK)
+            a = 0.45 * u
+            p.drawPolygon(QPolygonF([QPointF(cx + sign * a, cy), QPointF(cx - sign * a * 0.7, cy - a),
+                                     QPointF(cx - sign * a * 0.7, cy + a)]))
+
+    def paint_menu(self, p, W, H, u):
+        """Kachel-Menü über der gewählten Kachel (wie bei Google TV)."""
+        if not self.tile_rects or self.col >= len(self.tile_rects):
+            return
+        tile = self.tile_rects[self.col]
+        items = self.menu["items"]
+        p.fillRect(self.rect(), alpha("#000000", 0.45))
+        row_h, pad = 2.8 * u, 0.8 * u
+        width = max(15 * u, tile.width())
+        height = len(items) * row_h + 2 * pad + 2.6 * u
+        x = min(max(tile.center().x() - width / 2, 1.5 * u), W - width - 1.5 * u)
+        box = QRectF(x, tile.top() - height - 1.2 * u, width, height)
+        p.setPen(Qt.NoPen)
+        p.setBrush(CARD)
+        p.drawRoundedRect(box, 1.2 * u, 1.2 * u)
+        self.text(p, QRectF(box.x() + 1.4 * u, box.y() + pad, width - 2.8 * u, 2.2 * u),
+                  self.apps[self.col]["name"], 1.0 * u, MUTED, QFont.DemiBold)
+        y = box.y() + pad + 2.6 * u
+        for i, (label, _) in enumerate(items):
+            r = QRectF(box.x() + pad, y, width - 2 * pad, row_h - 0.3 * u)
+            focused = i == self.menu["index"]
+            if focused:
+                p.setPen(Qt.NoPen)
+                p.setBrush(TEXT)
+                p.drawRoundedRect(r, r.height() / 2, r.height() / 2)
+            self.text(p, r.adjusted(1.2 * u, 0, 0, 0), label, 1.1 * u, DARK if focused else TEXT, QFont.DemiBold)
+            y += row_h
 
     def pill(self, p, rect, label, size, focused):
         p.setPen(Qt.NoPen)
