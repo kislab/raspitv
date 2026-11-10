@@ -1,0 +1,167 @@
+/* Prime Video im Stil der Prime-Video-TV-App – ergänzt netflix-tv.css (gemeinsame Bausteine). */
+
+html.tv-prime #nftv {
+  --red: #1a98ff; /* Fortschritt in Prime-Blau */
+  --pv-bg: #00050d;
+  background: var(--pv-bg);
+  font-family: "Amazon Ember", "Helvetica Neue", "Nunito Sans", Arial, sans-serif;
+}
+html.tv-prime #nftv .nf-shade {
+  background:
+    linear-gradient(to right, #00050d 16%, rgba(0, 5, 13, 0.75) 38%, rgba(0, 5, 13, 0) 66%),
+    linear-gradient(to top, #00050d 24%, rgba(0, 5, 13, 0.55) 42%, rgba(0, 5, 13, 0) 62%);
+}
+html.tv-prime #nftv .nf-d-shade {
+  background:
+    linear-gradient(to right, #00050d 20%, rgba(0, 5, 13, 0.8) 40%, rgba(0, 5, 13, 0) 68%),
+    linear-gradient(to top, #00050d 18%, rgba(0, 5, 13, 0.5) 40%, rgba(0, 5, 13, 0) 60%);
+}
+/* Banner nimmt die volle Breite ein, oben Platz für die Leiste */
+html.tv-prime #nftv .pv-hero-bg { width: 82%; height: 86%; }
+
+/* ---------- Obere Leiste ---------- */
+.pv-topnav {
+  position: absolute;
+  left: 0; right: 0; top: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: calc(var(--u) * 3);
+  height: calc(var(--u) * 10);
+  padding: 0 calc(var(--u) * 6) 0 calc(var(--u) * 13);
+  background: linear-gradient(to bottom, rgba(0, 5, 13, 0.9), rgba(0, 5, 13, 0));
+  transition: opacity 0.3s, transform 0.3s;
+}
+.pv-hide-nav .pv-topnav { opacity: 0; transform: translateY(calc(var(--u) * -4)); pointer-events: none; }
+.pv-logo { width: calc(var(--u) * 13); flex: none; }
+.pv-logo svg { width: 100%; height: auto; display: block; }
+.pv-nav-items { display: flex; align-items: center; gap: calc(var(--u) * 0.6); flex: 1; }
+.pv-nav-item {
+  padding: calc(var(--u) * 0.9) calc(var(--u) * 2);
+  border-radius: calc(var(--u) * 3);
+  font-size: calc(var(--u) * 2);
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.62);
+  transition: background 0.15s, color 0.15s, transform 0.15s;
+}
+.pv-nav-item.pv-icon, .pv-nav-icon { padding: calc(var(--u) * 0.9); }
+.pv-nav-icon .nf-icon { width: calc(var(--u) * 2.6); height: calc(var(--u) * 2.6); }
+.pv-nav-item.pv-active { color: #fff; }
+.pv-nav-item.pv-active::after {
+  content: ""; display: block; height: calc(var(--u) * 0.3); margin-top: calc(var(--u) * 0.4);
+  border-radius: 2px; background: #fff;
+}
+.pv-nav-item.nf-on { background: #fff; color: #00050d; transform: scale(1.06); }
+.pv-nav-item.nf-on::after { background: #00050d; }
+.pv-avatar {
+  width: calc(var(--u) * 4.6); height: calc(var(--u) * 4.6);
+  flex: none;
+  display: grid; place-items: center;
+  border-radius: 50%;
+  overflow: hidden;
+  background: #1a98ff;
+  font-size: calc(var(--u) * 2.4);
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+.pv-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.pv-avatar svg { width: 62%; height: 62%; margin-top: 12%; }
+.pv-avatar.nf-on { transform: scale(1.12); box-shadow: 0 0 0 calc(var(--u) * 0.35) #fff; }
+#nftv .pv-nav-item, #nftv .pv-avatar, #nftv .pv-dot { cursor: pointer !important; }
+.pv-nav-focus .nf-home > :not(.pv-topnav) { opacity: 1; }
+/* Zurück-Pfeil sitzt links in der Leiste */
+html.tv-prime #nftv .nf-back { top: calc(var(--u) * 2.6); left: calc(var(--u) * 4); z-index: 6; }
+
+/* ---------- Banner ---------- */
+html.tv-prime #nftv .nf-hero { left: calc(var(--u) * 13); top: calc(var(--u) * 15); width: calc(var(--u) * 70); }
+html.tv-prime #nftv .nf-logo { max-width: calc(var(--u) * 52); max-height: calc(var(--u) * 17); }
+.pv-msg { font-size: calc(var(--u) * 2); font-weight: 700; color: #33c6ff; margin-bottom: calc(var(--u) * 1.2); }
+.pv-msg-line { display: flex; align-items: center; gap: calc(var(--u) * 1.6); margin-bottom: calc(var(--u) * 1.4); }
+.pv-msg-line .pv-msg { margin: 0; }
+html.tv-prime #nftv .nf-syn { -webkit-line-clamp: 2; font-size: calc(var(--u) * 2); color: #d4d6d8; }
+.pv-entitled { margin: calc(var(--u) * -1.4) 0 calc(var(--u) * 2.4); max-width: calc(var(--u) * 60); font-size: calc(var(--u) * 1.7); color: #aab0b6; }
+.pv-dots { display: flex; gap: calc(var(--u) * 0.8); margin-top: calc(var(--u) * 3); }
+.pv-dot { width: calc(var(--u) * 0.8); height: calc(var(--u) * 0.8); border-radius: calc(var(--u) * 0.4); background: rgba(255, 255, 255, 0.35); transition: width 0.25s, background 0.25s; }
+.pv-dot.pv-on { width: calc(var(--u) * 2.6); background: #fff; }
+
+/* Knöpfe wie in der Prime-App: abgerundete Rechtecke, gewählter Knopf weiß; runde Symbolknöpfe */
+html.tv-prime #nftv .nf-btn { border-radius: calc(var(--u) * 0.8); background: rgba(255, 255, 255, 0.18); font-size: calc(var(--u) * 2); }
+html.tv-prime #nftv .nf-btn.nf-btn-primary { background: rgba(255, 255, 255, 0.28); }
+html.tv-prime #nftv .nf-btn.nf-on { background: #fff; color: #00050d; }
+html.tv-prime #nftv .nf-btn.pv-round { width: calc(var(--u) * 5.4); padding: 0; justify-content: center; border-radius: 50%; }
+
+/* ---------- Reihen ---------- */
+html.tv-prime #nftv .nf-rows, html.tv-prime #nftv .nf-peek { left: calc(var(--u) * 13); }
+html.tv-prime #nftv .nf-peek { top: calc(var(--u) * 12); }
+html.tv-prime #nftv .nf-rows .nf-row { height: auto; padding-bottom: calc(var(--u) * 3.6); }
+html.tv-prime #nftv .nf-row-title { font-size: calc(var(--u) * 2.1); font-weight: 700; color: #fff; margin-bottom: calc(var(--u) * 1.3); }
+html.tv-prime #nftv .nf-track { gap: calc(var(--u) * 1.4); }
+html.tv-prime #nftv .nf-card { width: calc(var(--u) * 34); height: calc(var(--u) * 19.125); border-radius: calc(var(--u) * 0.8); background: #1b2530; }
+html.tv-prime #nftv .nf-card.pv-tall { width: calc(var(--u) * 20); height: calc(var(--u) * 30); }
+html.tv-prime #nftv .nf-card.nf-on {
+  transform: scale(1.08);
+  box-shadow: 0 0 0 calc(var(--u) * 0.3) #fff, 0 calc(var(--u) * 1.6) calc(var(--u) * 4) rgba(0, 0, 0, 0.8);
+}
+html.tv-prime #nftv .nf-card-progress { left: 0; right: 0; bottom: 0; height: calc(var(--u) * 0.5); border-radius: 0; background: rgba(255, 255, 255, 0.25); }
+html.tv-prime #nftv .nf-card-progress div { border-radius: 0; }
+.pv-badge {
+  position: absolute;
+  top: 0; right: 0;
+  padding: calc(var(--u) * 0.3) calc(var(--u) * 0.8);
+  border-bottom-left-radius: calc(var(--u) * 0.6);
+  background: rgba(0, 5, 13, 0.85);
+  font-size: calc(var(--u) * 1.15);
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  color: #fff;
+}
+.pv-badge-live { left: calc(var(--u) * 0.8); right: auto; top: calc(var(--u) * 0.8); border-radius: calc(var(--u) * 0.4); background: #e0102c; }
+.pv-badge.pv-badge-inline { position: static; border-radius: calc(var(--u) * 0.3); background: #fff; color: #00050d; font-size: calc(var(--u) * 1.4); }
+html.tv-prime #nftv .nf-peek-title { font-size: calc(var(--u) * 4.6); font-weight: 800; }
+html.tv-prime #nftv .nf-peek-row { font-size: calc(var(--u) * 2); color: #aab0b6; }
+.pv-peek-prime::before { content: "✓ "; color: #1a98ff; font-weight: 800; }
+
+/* ---------- Detailseite ---------- */
+html.tv-prime #nftv .nf-d-info { left: calc(var(--u) * 13); top: calc(var(--u) * 10); width: calc(var(--u) * 80); }
+html.tv-prime #nftv .nf-d-mini { left: calc(var(--u) * 13); top: calc(var(--u) * 8); }
+html.tv-prime #nftv .pv-lower { left: calc(var(--u) * 13); }
+html.tv-prime #nftv .dp-tab.dp-tab-active::after { background: #fff; }
+html.tv-prime #nftv .dp-tab.nf-on { color: #fff; }
+html.tv-prime #nftv .dp-season { border-radius: calc(var(--u) * 0.8); background: rgba(255, 255, 255, 0.16); color: #fff; }
+html.tv-prime #nftv .dp-season.nf-on { background: #fff; color: #00050d; }
+html.tv-prime #nftv .nf-ep { width: calc(var(--u) * 38); }
+html.tv-prime #nftv .nf-ep .nf-ep-pic { height: calc(var(--u) * 21.4); border-radius: calc(var(--u) * 0.8); }
+html.tv-prime #nftv .nf-ep.pv-ep-tall { width: calc(var(--u) * 20); }
+html.tv-prime #nftv .nf-ep.pv-ep-tall .nf-ep-pic { height: calc(var(--u) * 30); }
+html.tv-prime #nftv .nf-ep.nf-on .nf-ep-pic { box-shadow: 0 0 0 calc(var(--u) * 0.3) #fff; }
+html.tv-prime #nftv .nf-ep .nf-ep-sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.pv-ep-desc {
+  max-width: calc(var(--u) * 110);
+  min-height: calc(var(--u) * 6);
+  margin: calc(var(--u) * 2.4) 0 0;
+  font-size: calc(var(--u) * 1.9);
+  line-height: 1.45;
+  color: #c8ccd0;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.pv-details { white-space: pre-line; }
+
+/* ---------- Profile, Laden ---------- */
+html.tv-prime #nftv .pv-profiles { background: var(--pv-bg); }
+html.tv-prime #nftv .nf-profile-pic { border-radius: 50%; background: #1a98ff; display: grid; place-items: center; }
+.pv-initial { font-size: calc(var(--u) * 7); font-weight: 800; color: #fff; }
+html.tv-prime #nftv .nf-profile.nf-on .nf-profile-pic { box-shadow: 0 0 0 calc(var(--u) * 0.4) #fff; }
+.pv-logo-top { position: absolute; top: calc(var(--u) * 5); width: calc(var(--u) * 16); }
+html.tv-prime #nftv .pv-loading { background: radial-gradient(ellipse at 50% 40%, #0b1f36, #00050d 70%); flex-direction: column; gap: calc(var(--u) * 4); display: flex; align-items: center; justify-content: center; }
+.pv-logo-big { width: calc(var(--u) * 30); animation: nf-pulse 1.6s ease-in-out infinite; }
+html.tv-prime #nftv .nf-spinner { border-top-color: #1a98ff; }
+
+/* Detailseite: Info rechts neben dem Titel-Logo zu lang -> Logo kleiner */
+html.tv-prime #nftv .nf-d-info .nf-logo { max-height: calc(var(--u) * 15); }
+html.tv-prime #nftv .dp-items { margin-top: calc(var(--u) * 0.5); }
+
+html.tv-prime #nftv .nf-btn { white-space: nowrap; }
+html.tv-prime #nftv .nf-d-info .pv-entitled { margin: calc(var(--u) * 2) 0 0; }
+html.tv-prime #nftv .nf-ep { height: auto; }

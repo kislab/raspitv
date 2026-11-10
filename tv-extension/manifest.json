@@ -1,0 +1,90 @@
+{
+  "manifest_version": 3,
+  "name": "RaspiTV Bedienung",
+  "version": "1.0",
+  "description": "Macht Streaming-Webseiten im RaspiTV-Player mit der Fernbedienung bedienbar.",
+  "host_permissions": [
+    "http://127.0.0.1:8765/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.netflix.com/*"
+      ],
+      "css": [
+        "tv.css",
+        "netflix.css",
+        "netflix-tv.css"
+      ],
+      "js": [
+        "tv.js",
+        "netflix.js",
+        "netflix-tv.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://www.netflix.com/*"
+      ],
+      "js": [
+        "netflix-player.js"
+      ],
+      "world": "MAIN",
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://www.disneyplus.com/*"
+      ],
+      "css": [
+        "tv.css",
+        "netflix-tv.css",
+        "disney-tv.css"
+      ],
+      "js": [
+        "tv.js",
+        "disney-tv.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://www.disneyplus.com/*"
+      ],
+      "js": [
+        "disney-main.js"
+      ],
+      "world": "MAIN",
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://www.primevideo.com/*"
+      ],
+      "css": [
+        "tv.css",
+        "netflix-tv.css",
+        "disney-tv.css",
+        "prime-tv.css"
+      ],
+      "js": [
+        "tv.js",
+        "prime-tv.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "http://*/*"
+      ],
+      "js": [
+        "jellyfin.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ]
+}

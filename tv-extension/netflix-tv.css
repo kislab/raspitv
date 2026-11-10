@@ -1,0 +1,403 @@
+/* Eigene Netflix-Oberfläche im Stil der TV-App (netflix-tv.js). 1 --u = 10 px bei 1920 × 1080. */
+
+/* Netflix-Webseite unsichtbar, solange die eigene Oberfläche aktiv ist */
+html.nftv-on body { opacity: 0 !important; pointer-events: none !important; }
+html.nftv-on { overflow: hidden !important; }
+#nftv { display: none; }
+html.nftv-on #nftv { display: block; }
+
+#nftv {
+  --u: calc(100vw / 192);
+  --red: #e50914;
+  position: fixed;
+  inset: 0;
+  z-index: 2147483000;
+  overflow: hidden;
+  background: #000;
+  color: #fff;
+  font-family: "Netflix Sans", "Helvetica Neue", "Nunito Sans", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+#nftv * { box-sizing: border-box; }
+#nftv img { display: block; }
+
+.nf-icon { display: inline-flex; width: calc(var(--u) * 3); height: calc(var(--u) * 3); flex: none; }
+.nf-icon svg { width: 100%; height: 100%; }
+
+/* ---------- Linke Leiste ---------- */
+
+.nf-rail {
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  z-index: 5;
+  width: calc(var(--u) * 10);
+  padding: calc(var(--u) * 5) 0 0 calc(var(--u) * 3.5);
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--u) * 1.2);
+  background: linear-gradient(to right, rgba(0, 0, 0, 0.85), transparent);
+  transition: width 0.25s ease, background 0.25s;
+}
+.nf-rail.nf-rail-open {
+  width: calc(var(--u) * 40);
+  background: linear-gradient(to right, #000 60%, rgba(0, 0, 0, 0.9) 80%, transparent);
+}
+.nf-home { transition: opacity 0.25s; }
+.nf-nav-open .nf-home { opacity: 0.35; }
+.nf-avatar {
+  width: calc(var(--u) * 3.6);
+  height: calc(var(--u) * 3.6);
+  margin: 0 0 calc(var(--u) * 6) calc(var(--u) * -0.3);
+  border-radius: calc(var(--u) * 0.4);
+}
+.nf-rail-item {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--u) * 2.6);
+  height: calc(var(--u) * 5);
+  color: rgba(255, 255, 255, 0.55);
+  font-size: calc(var(--u) * 2.2);
+  white-space: nowrap;
+  transition: color 0.15s, transform 0.15s;
+}
+.nf-rail-item.nf-active { color: #fff; }
+.nf-rail-item.nf-active .nf-icon { color: var(--red); }
+.nf-rail-label { opacity: 0; transition: opacity 0.2s; }
+.nf-rail-open .nf-rail-label { opacity: 1; }
+.nf-rail-item.nf-on { color: #fff; transform: scale(1.08); transform-origin: left center; font-weight: 700; }
+.nf-rail-item.nf-on .nf-icon { color: #fff; }
+
+/* ---------- Startseite ---------- */
+
+.nf-home { position: absolute; inset: 0; }
+.nf-hero-bg,
+.nf-peek-bg {
+  position: absolute;
+  top: 0; right: 0;
+  width: 78%;
+  height: 82%;
+  object-fit: cover;
+  transition: opacity 0.4s;
+}
+.nf-peek-bg { width: 64%; height: 62%; opacity: 0; filter: saturate(1.1); }
+/* Bilder laufen nach links und unten weich in den schwarzen Hintergrund aus */
+.nf-hero-bg, .nf-peek-bg, .nf-d-bg {
+  -webkit-mask-image: linear-gradient(to right, transparent 0%, #000 38%), linear-gradient(to top, transparent 0%, #000 35%);
+  -webkit-mask-composite: source-in;
+  mask-image: linear-gradient(to right, transparent 0%, #000 38%), linear-gradient(to top, transparent 0%, #000 35%);
+  mask-composite: intersect;
+}
+.nf-in-rows .nf-hero-bg { opacity: 0; }
+.nf-in-rows .nf-peek-bg { opacity: 1; }
+.nf-shade {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(to right, #000 22%, rgba(0, 0, 0, 0.75) 42%, rgba(0, 0, 0, 0) 70%),
+    linear-gradient(to top, #000 22%, rgba(0, 0, 0, 0.6) 40%, rgba(0, 0, 0, 0) 62%);
+}
+
+.nf-hero {
+  position: absolute;
+  left: calc(var(--u) * 14);
+  top: calc(var(--u) * 13);
+  width: calc(var(--u) * 72);
+  transition: opacity 0.3s, transform 0.3s;
+}
+.nf-in-rows .nf-hero { opacity: 0; transform: translateY(calc(var(--u) * -4)); pointer-events: none; }
+.nf-logo {
+  max-width: calc(var(--u) * 56);
+  max-height: calc(var(--u) * 20);
+  object-fit: contain;
+  object-position: left bottom;
+  margin-bottom: calc(var(--u) * 2.4);
+}
+.nf-title { margin: 0 0 calc(var(--u) * 2); font-size: calc(var(--u) * 6); font-weight: 800; line-height: 1.05; }
+.nf-attrs { font-size: calc(var(--u) * 2); font-weight: 600; color: #ddd; margin-bottom: calc(var(--u) * 1.6); }
+.nf-syn {
+  margin: 0 0 calc(var(--u) * 3);
+  font-size: calc(var(--u) * 2.1);
+  line-height: 1.4;
+  color: #e6e6e6;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.nf-callout { margin-top: calc(var(--u) * 2.4); font-size: calc(var(--u) * 1.8); color: #bbb; }
+
+.nf-buttons { display: flex; gap: calc(var(--u) * 1.6); }
+.nf-btn {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--u) * 1.2);
+  height: calc(var(--u) * 5.4);
+  padding: 0 calc(var(--u) * 3);
+  border-radius: calc(var(--u) * 0.6);
+  background: rgba(109, 109, 110, 0.55);
+  font-size: calc(var(--u) * 2.1);
+  font-weight: 700;
+  transition: transform 0.15s, background 0.15s, color 0.15s;
+}
+.nf-btn .nf-icon { width: calc(var(--u) * 2.6); height: calc(var(--u) * 2.6); }
+.nf-btn.nf-on { background: #fff; color: #000; transform: scale(1.08); }
+
+/* Infobereich zur gewählten Karte */
+.nf-peek {
+  position: absolute;
+  left: calc(var(--u) * 14);
+  top: calc(var(--u) * 15);
+  width: calc(var(--u) * 80);
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+.nf-in-rows .nf-peek { opacity: 1; }
+.nf-peek-title { margin: 0 0 calc(var(--u) * 1.2); font-size: calc(var(--u) * 5.4); font-weight: 800; line-height: 1.1; }
+.nf-peek-row { font-size: calc(var(--u) * 2.2); color: #bbb; }
+
+/* ---------- Reihen ---------- */
+
+.nf-rows,
+.nf-d-rows {
+  position: absolute;
+  left: calc(var(--u) * 14);
+  right: 0;
+  top: 0;
+  transition: transform 0.35s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+.nf-row { height: calc(var(--u) * 32); transition: opacity 0.25s; }
+.nf-d-rows .nf-row { height: calc(var(--u) * 42); }
+.nf-row-gone { opacity: 0; }
+.nf-card { transition: transform 0.2s ease-out, box-shadow 0.2s, opacity 0.2s; }
+.nf-card.nf-past { opacity: 0; } /* Karten links der gewählten liegen unter der Leiste */
+.nf-row-title { margin: 0 0 calc(var(--u) * 1.4); font-size: calc(var(--u) * 2.4); font-weight: 700; color: #e5e5e5; }
+.nf-track {
+  display: flex;
+  gap: calc(var(--u) * 1.6);
+  transition: transform 0.3s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+.nf-card {
+  position: relative;
+  flex: none;
+  width: calc(var(--u) * 36);
+  height: calc(var(--u) * 20.25);
+  border-radius: calc(var(--u) * 0.6);
+  overflow: hidden;
+  background: #222;
+  transform-origin: left center;
+  transition: transform 0.2s ease-out, box-shadow 0.2s;
+}
+.nf-card-img { width: 100%; height: 100%; object-fit: cover; }
+.nf-card.nf-on {
+  transform: scale(1.1);
+  z-index: 2;
+  box-shadow: 0 0 0 calc(var(--u) * 0.35) #fff, 0 calc(var(--u) * 1.4) calc(var(--u) * 4) rgba(0, 0, 0, 0.8);
+}
+.nf-card-progress {
+  position: absolute;
+  left: calc(var(--u) * 1.2); right: calc(var(--u) * 1.2); bottom: calc(var(--u) * 1);
+  height: calc(var(--u) * 0.45);
+  background: rgba(255, 255, 255, 0.35);
+  border-radius: 2px;
+}
+.nf-card-progress div { height: 100%; background: var(--red); border-radius: 2px; }
+
+/* ---------- Detailseite ---------- */
+
+.nf-detail { position: absolute; inset: 0; }
+.nf-d-bg { position: absolute; top: 0; right: 0; width: 80%; height: 92%; object-fit: cover; transition: opacity 0.4s; }
+.nf-d-shade {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(to right, #000 22%, rgba(0, 0, 0, 0.8) 40%, rgba(0, 0, 0, 0) 68%),
+    linear-gradient(to top, #000 18%, rgba(0, 0, 0, 0.5) 40%, rgba(0, 0, 0, 0) 60%);
+}
+.nf-d-info {
+  position: absolute;
+  left: calc(var(--u) * 14);
+  top: calc(var(--u) * 11);
+  width: calc(var(--u) * 76);
+  transition: opacity 0.3s, transform 0.3s;
+}
+.nf-d-in-rows .nf-d-info { opacity: 0; transform: translateY(calc(var(--u) * -6)); }
+.nf-d-in-rows .nf-d-bg { opacity: 0.35; }
+.nf-d-mini {
+  position: absolute;
+  left: calc(var(--u) * 14);
+  top: calc(var(--u) * 15);
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+.nf-d-mini img { max-width: calc(var(--u) * 40); max-height: calc(var(--u) * 14); object-fit: contain; object-position: left bottom; }
+.nf-d-mini h1 { margin: 0; font-size: calc(var(--u) * 5); font-weight: 800; }
+.nf-d-in-rows .nf-d-mini { opacity: 1; }
+.nf-d-progress { display: flex; align-items: center; gap: calc(var(--u) * 1.6); margin-bottom: calc(var(--u) * 1.8); font-size: calc(var(--u) * 1.8); color: #ccc; }
+.nf-d-bar { width: calc(var(--u) * 24); height: calc(var(--u) * 0.5); background: rgba(255, 255, 255, 0.3); border-radius: 2px; }
+.nf-d-bar div { height: 100%; background: var(--red); border-radius: 2px; }
+
+.nf-ep { width: calc(var(--u) * 40); height: auto; background: none; overflow: visible; border-radius: 0; }
+.nf-ep .nf-ep-pic { position: relative; height: calc(var(--u) * 22.5); border-radius: calc(var(--u) * 0.6); overflow: hidden; background: #222; }
+.nf-ep.nf-on { box-shadow: none; transform: scale(1.06); }
+.nf-ep.nf-on .nf-ep-pic { box-shadow: 0 0 0 calc(var(--u) * 0.35) #fff; }
+.nf-ep-title {
+  margin-top: calc(var(--u) * 1.2);
+  font-size: calc(var(--u) * 1.9);
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #ccc;
+}
+.nf-ep.nf-on .nf-ep-title { color: #fff; }
+.nf-ep-sub { margin-top: calc(var(--u) * 0.4); font-size: calc(var(--u) * 1.6); color: #999; }
+
+/* Staffelwahl */
+.nf-picker {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  padding: calc(var(--u) * 14) 0 0 calc(var(--u) * 14);
+  background: linear-gradient(to right, #000 45%, rgba(0, 0, 0, 0.92));
+  display: none;
+}
+.nf-picker.nf-picker-open { display: block; }
+.nf-picker h2 { margin: 0 0 calc(var(--u) * 3); font-size: calc(var(--u) * 3); }
+.nf-picker-item { font-size: calc(var(--u) * 2.6); color: #999; padding: calc(var(--u) * 1.2) 0; transition: color 0.15s, transform 0.15s; }
+.nf-picker-item.nf-on { color: #fff; font-weight: 700; transform: scale(1.06); transform-origin: left center; }
+
+.nf-search-input { position: absolute; left: -9999px; }
+
+/* Maus (z. B. per Fernzugriff): Zeiger sichtbar, anklickbare Elemente erkennbar */
+#nftv, #nftv * { cursor: default !important; }
+#nftv .nf-card, #nftv .nf-btn, #nftv .nf-rail-item, #nftv .nf-picker-item, #nftv .nf-back { cursor: pointer !important; }
+.nf-back {
+  position: absolute;
+  left: calc(var(--u) * 2.6);
+  top: calc(var(--u) * 2.4);
+  z-index: 7;
+  width: calc(var(--u) * 5.2);
+  height: calc(var(--u) * 5.2);
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  transition: background 0.15s, transform 0.15s;
+}
+.nf-back:hover { background: rgba(255, 255, 255, 0.3); transform: scale(1.08); }
+.nf-back .nf-icon { width: calc(var(--u) * 2.8); height: calc(var(--u) * 2.8); }
+.nf-rail { padding-top: calc(var(--u) * 10); } /* Platz für den Zurück-Pfeil */
+
+/* Zurück-Pfeil im Player: erscheint bei Mausbewegung */
+.nf-player-back {
+  --u: calc(100vw / 192);
+  position: fixed !important;
+  z-index: 2147483647;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s;
+}
+.nf-player-back.nf-show { opacity: 1; pointer-events: auto; cursor: pointer !important; }
+.nf-player-back .nf-icon svg { width: 100%; height: 100%; }
+
+/* ---------- Bilder weich einblenden ---------- */
+#nftv img { opacity: 0; transition: opacity 0.45s ease; }
+#nftv img.nf-loaded { opacity: 1; }
+#nftv .nf-in-rows .nf-hero-bg.nf-loaded { opacity: 0; }
+#nftv .nf-peek-bg.nf-loaded { opacity: 0; }
+#nftv.nf-in-rows .nf-peek-bg.nf-loaded { opacity: 1; }
+#nftv.nf-in-rows .nf-hero-bg { opacity: 0 !important; }
+#nftv.nf-d-in-rows .nf-d-bg.nf-loaded { opacity: 0.35; }
+
+/* ---------- Ladebildschirm ---------- */
+.nf-loading { position: absolute; inset: 0; display: grid; place-items: center; background: #000; }
+.nf-n-logo { width: calc(var(--u) * 11); animation: nf-pulse 1.6s ease-in-out infinite; }
+.nf-n-logo svg, .nf-profiles-logo svg { width: 100%; height: auto; display: block; }
+@keyframes nf-pulse { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.06); opacity: 0.8; } }
+.nf-spinner {
+  position: absolute;
+  top: calc(50% + var(--u) * 15);
+  width: calc(var(--u) * 5);
+  height: calc(var(--u) * 5);
+  border: calc(var(--u) * 0.5) solid rgba(255, 255, 255, 0.15);
+  border-top-color: var(--red);
+  border-radius: 50%;
+  animation: nf-spin 0.9s linear infinite;
+}
+@keyframes nf-spin { to { transform: rotate(360deg); } }
+
+/* ---------- Profilauswahl ---------- */
+.nf-profiles {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(ellipse at 50% 30%, #1c1c1c, #000 70%);
+}
+.nf-profiles-logo { position: absolute; top: calc(var(--u) * 5); width: calc(var(--u) * 3.6); }
+.nf-profiles-title { margin: 0 0 calc(var(--u) * 6); font-size: calc(var(--u) * 5); font-weight: 700; }
+.nf-profiles-row { display: flex; gap: calc(var(--u) * 5); }
+.nf-profile { display: flex; flex-direction: column; align-items: center; gap: calc(var(--u) * 2); width: calc(var(--u) * 18); }
+.nf-profile-pic {
+  position: relative;
+  width: calc(var(--u) * 18);
+  height: calc(var(--u) * 18);
+  border-radius: calc(var(--u) * 1);
+  overflow: hidden;
+  background: #333;
+  transition: transform 0.2s ease-out, box-shadow 0.2s;
+}
+.nf-profile-pic img { width: 100%; height: 100%; object-fit: cover; }
+.nf-profile-lock {
+  position: absolute;
+  right: calc(var(--u) * 1); bottom: calc(var(--u) * 1);
+  width: calc(var(--u) * 3.2); height: calc(var(--u) * 3.2);
+  padding: calc(var(--u) * 0.6);
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.7);
+  color: #fff;
+}
+.nf-profile-lock svg { width: 100%; height: 100%; display: block; }
+.nf-profile-name { font-size: calc(var(--u) * 2.4); color: #8c8c8c; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; transition: color 0.2s; }
+.nf-profile.nf-on .nf-profile-pic { transform: scale(1.12); box-shadow: 0 0 0 calc(var(--u) * 0.45) #fff; }
+.nf-profile.nf-on .nf-profile-name { color: #fff; font-weight: 700; }
+#nftv .nf-profile { cursor: pointer !important; }
+
+/* ---------- PIN-Eingabe ---------- */
+.nf-pin {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(ellipse at 50% 30%, #1c1c1c, #000 70%);
+}
+.nf-pin-pic { width: calc(var(--u) * 10); height: calc(var(--u) * 10); }
+.nf-pin-name { margin: calc(var(--u) * 1.4) 0 calc(var(--u) * 3); font-size: calc(var(--u) * 2.2); color: #bbb; }
+.nf-pin-title { margin: 0 0 calc(var(--u) * 3); font-size: calc(var(--u) * 3.6); font-weight: 700; }
+.nf-pin-dots { display: flex; gap: calc(var(--u) * 2.4); }
+.nf-pin-dot {
+  width: calc(var(--u) * 2.4); height: calc(var(--u) * 2.4);
+  border-radius: 50%;
+  border: calc(var(--u) * 0.3) solid #fff;
+  transition: background 0.15s, transform 0.15s;
+}
+.nf-pin-dot.nf-filled { background: #fff; transform: scale(1.1); }
+.nf-pin-error { height: calc(var(--u) * 4); margin-top: calc(var(--u) * 1.6); color: #e87c03; font-size: calc(var(--u) * 2); }
+.nf-pin-pad { display: grid; grid-template-columns: repeat(3, calc(var(--u) * 9)); gap: calc(var(--u) * 1.4); }
+.nf-pin-key {
+  height: calc(var(--u) * 7);
+  display: grid;
+  place-items: center;
+  border-radius: calc(var(--u) * 0.8);
+  background: rgba(255, 255, 255, 0.1);
+  font-size: calc(var(--u) * 3);
+  font-weight: 600;
+  transition: transform 0.15s, background 0.15s, color 0.15s;
+}
+.nf-pin-key.nf-on { background: #fff; color: #000; transform: scale(1.08); }
+#nftv .nf-pin-key { cursor: pointer !important; }
