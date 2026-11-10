@@ -7,6 +7,7 @@ Mediacenter für den Raspberry Pi 4 im Stil von Google TV – bedienbar mit der 
 - **Player**: Chromium im Kioskmodus (nur für DRM-Videos), mit eigener Erweiterung `tv-extension/`,
   die Netflix, Disney+ und Prime Video wie die jeweilige TV-App aussehen lässt.
 - **Jellyfin**: der Server im Heimnetz wird automatisch gefunden (Einstellungen → Jellyfin).
+  Anmelden ohne Tastatur: „Quick Connect verwenden“ wählen und den Code in der Jellyfin-App am Handy bestätigen.
 - **Fernbedienung**: HTTP-Schnittstelle auf `127.0.0.1:8765` (`POST /key {"key": "up"}`, `GET /status`).
 
 ## Installation
