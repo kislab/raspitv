@@ -11,7 +11,7 @@ awk 'NR>7 {cpu[$12]+=$9} END {for (c in cpu) if (cpu[c] > 1) printf "  %-18s %6.
 grep -E '^%Cpu|^MiB Mem' /tmp/raspitv-top.txt | sed 's/^/  /'
 echo "  Temperatur: $(vcgencmd measure_temp 2>/dev/null)  Takt: $(vcgencmd measure_clock arm 2>/dev/null)  Drosselung: $(vcgencmd get_throttled 2>/dev/null)"
 echo "  Chromium-Typen (CPU):"
-for pid in $(pgrep -f 'user-data-dir=.*raspitv/player'); do
+for pid in $(pgrep -f 'user-data-dir=.*raspitv/'); do
   type=$(tr '\0' ' ' < /proc/$pid/cmdline | grep -o -- '--type=[a-z-]*' | head -1); type=${type:-browser}
   util=$(tr '\0' ' ' < /proc/$pid/cmdline | grep -o -- '--utility-sub-type=[a-zA-Z.]*' | sed 's/.*=//')
   c=$(awk -v p=$pid 'NR>7 && $1==p {print $9}' /tmp/raspitv-top.txt)

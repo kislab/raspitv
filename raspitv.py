@@ -319,7 +319,9 @@ class Home(AccountsUI, QWidget):
             if quick:
                 self.launch_failed(app)
             self.activateWindow()
-        self.update()
+        # Während ein Video läuft, liegt RaspiTV unsichtbar dahinter: nicht neu zeichnen (spart CPU)
+        if not (self.running and time.monotonic() - self.started > 8):
+            self.update()
 
     # ---------- Einstellungen ----------
 

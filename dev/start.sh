@@ -5,7 +5,7 @@
 export XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-0
 ROOT="$(dirname "$(dirname "$(readlink -f "$0")")")"
 python3 -m py_compile "$ROOT/raspitv.py" "$ROOT/player.py" || exit 1
-pkill -x lxterminal; pkill -x -f "python3 $ROOT/raspitv.py"; sleep 4
+pkill -x lxterminal; pkill -x -f "python3 ($ROOT/)?raspitv\.py"; sleep 4
 RASPITV_DEBUG=1 setsid lxterminal --title=RaspiTV -e bash -c "python3 $ROOT/raspitv.py; exec bash" >/dev/null 2>&1 &
 sleep 6
 [ -z "$1" ] && exit 0

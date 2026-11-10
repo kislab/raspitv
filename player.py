@@ -67,6 +67,27 @@ PERFORMANCE_FLAGS = [
 ]
 
 
+# Hintergrunddienste, die beim Video nicht mit dem Player um die CPU kämpfen sollen
+# (Fernzugriff kostet sonst bis zu einer ganzen CPU-Kern-Leistung)
+BACKGROUND = ("wayvnc", "rpi-connectd", "rpi-connect", "lxpanel", "wf-panel-pi", "pcmanfm", "pcmanfm-pi")
+
+
+def calm_background():
+    """Hintergrunddienste des Benutzers auf niedrige Priorität setzen (nice 10)."""
+    for name in BACKGROUND:
+        try:
+            pids = subprocess.run(["pgrep", "-u", str(os.getuid()), "-x", name],
+                                  capture_output=True, text=True, timeout=2).stdout.split()
+        except (OSError, subprocess.SubprocessError):
+            continue
+        for pid in pids:
+            try:
+                if os.getpriority(os.PRIO_PROCESS, int(pid)) < 10:
+                    os.setpriority(os.PRIO_PROCESS, int(pid), 10)
+            except (OSError, ValueError):
+                pass
+
+
 class Player:
     """Hält höchstens einen laufenden Dienst (eigenes Profil, Logins bleiben erhalten)."""
 
@@ -125,6 +146,7 @@ class Player:
                 stdout=log, stderr=log,
             )
             self.app_id = app["id"]
+        calm_background()
 
     def stop(self):
         with self.lock:

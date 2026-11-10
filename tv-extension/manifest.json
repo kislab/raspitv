@@ -12,6 +12,21 @@
   "content_scripts": [
     {
       "matches": [
+        "https://www.youtube.com/*",
+        "https://m.youtube.com/*",
+        "https://www.twitch.tv/*",
+        "https://www.ardmediathek.de/*",
+        "https://www.zdf.de/*"
+      ],
+      "js": [
+        "media-limit.js"
+      ],
+      "world": "MAIN",
+      "run_at": "document_start",
+      "all_frames": true
+    },
+    {
+      "matches": [
         "https://www.netflix.com/*"
       ],
       "css": [
