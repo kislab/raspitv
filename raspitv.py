@@ -69,7 +69,9 @@ class Home(AccountsUI, QWidget):
         self.row = APPS
         self.col = 0                   # gewählte App
         self.view = self.start_view    # "home" | "settings" | "profiles" („Wer schaut?“)
-        self.items, self.item = [], 0  # Einstellungs-Zeilen und gewählte Zeile
+        self.cats, self.cat = [], 0    # Einstellungs-Kategorien und gewählte Kategorie
+        self.items, self.item = [], 0  # Zeilen der gewählten Kategorie und gewählte Zeile
+        self.pane = "cats"             # Fokus in den Einstellungen: "cats" (links) | "items" (rechts)
         self.volume = None
         self.dialog = None             # {"text", "buttons": [(label, fn)], "index"}
         self.menu = None               # Kachel-Menü: {"items": [(label, fn)], "index"}
@@ -85,8 +87,9 @@ class Home(AccountsUI, QWidget):
         self.hero = self.hero_prev = None
         self.hero_t = 1.0
         self.intro = 0.0               # Einblenden beim Start
-        self.panel = 0.0               # Einstellungs-Leiste: 0 = zu, 1 = offen
+        self.panel = 0.0               # Einstellungs-Seite: 0 = zu, 1 = offen
         self.panel_scroll = 0.0
+        self.cat_t = 1.0               # Einblenden des Inhalts nach Kategorie-Wechsel
         self.gear = 0.0                # Fokus des Zahnrads
         self.last_step = time.monotonic()
         self.art_cache = {}            # fertig gezeichnete Banner je App und Fenstergröße
@@ -329,11 +332,20 @@ class Home(AccountsUI, QWidget):
         self.view = "settings"
         self.volume = cfg.get_volume()
         self.build_items()
-        self.item = next(i for i, it in enumerate(self.items) if it["kind"] in FOCUSABLE)
-        self.panel_scroll = 0.0
+        self.pane, self.cat = "cats", 0
+        self.select_cat(0)
 
     def close_settings(self):
         self.view = "home"
+
+    def select_cat(self, index):
+        """Kategorie wählen: rechts deren Zeilen zeigen, oben beginnen."""
+        if index != self.cat:
+            self.cat_t = 0.0
+        self.cat = index
+        self.items = self.cats[index]["items"]
+        self.item = next((i for i, it in enumerate(self.items) if it["kind"] in FOCUSABLE), 0)
+        self.panel_scroll = 0.0
 
     def set(self, name, value):
         self.settings[name] = value
@@ -356,49 +368,69 @@ class Home(AccountsUI, QWidget):
             cfg.change_volume(5 * step)
             self.volume = cfg.get_volume()
 
-        items = [
-            {"kind": "header", "label": "Konto"},
-            {"kind": "action", "label": f"Konto wechseln ({self.account['name']})", "run": self.open_profiles},
-            {"kind": "header", "label": "Darstellung"},
-            {"kind": "choice", "label": "Kachelgröße", "value": lambda: s["tile_size"].capitalize(), "change": cycle_size},
-            {"kind": "choice", "label": "Uhrzeit", "value": lambda: "24 Stunden" if s["clock_24h"] else "12 Stunden",
-             "change": lambda step: self.set("clock_24h", not s["clock_24h"])},
-            {"kind": "toggle", "label": "Animationen", "value": lambda: s["animations"],
-             "change": lambda step: self.set("animations", not s["animations"])},
-            {"kind": "header", "label": "Apps anzeigen"},
+        apps = [{"kind": "toggle", "label": app["name"],
+                 "value": lambda app=app: app["id"] not in s["hidden"],
+                 "change": lambda step, app=app: toggle_app(app)} for app in self.all_apps]
+        sound = ([{"kind": "range", "label": "Lautstärke", "value": lambda: f"{self.volume} %", "change": volume}]
+                 if self.volume is not None else [{"kind": "info", "label": "Lautstärke", "value": "kein Audiogerät gefunden"}])
+
+        self.cats = [
+            {"label": "Konto", "icon": "account", "desc": "Wer gerade schaut und eigene Logins",
+             "items": [
+                 {"kind": "info", "label": "Aktives Konto", "value": self.account["name"]},
+                 {"kind": "action", "label": "Konto wechseln", "run": self.open_profiles},
+             ]},
+            {"label": "Darstellung", "icon": "display", "desc": "Aussehen der Startseite",
+             "items": [
+                 {"kind": "choice", "label": "Kachelgröße", "value": lambda: s["tile_size"].capitalize(), "change": cycle_size},
+                 {"kind": "choice", "label": "Uhrzeit", "value": lambda: "24 Stunden" if s["clock_24h"] else "12 Stunden",
+                  "change": lambda step: self.set("clock_24h", not s["clock_24h"])},
+                 {"kind": "toggle", "label": "Animationen", "value": lambda: s["animations"],
+                  "change": lambda step: self.set("animations", not s["animations"])},
+             ]},
+            {"label": "Apps", "icon": "apps", "desc": "Welche Apps auf der Startseite erscheinen", "items": apps},
+            {"label": "Jellyfin", "icon": "server", "desc": "Eigener Mediaserver im Heimnetz",
+             "items": [
+                 {"kind": "choice", "label": "Server (OK = neu suchen)",
+                  "value": lambda: (s["jellyfin_url"] or "nicht gefunden").replace("http://", ""),
+                  "change": lambda step: self.server_url("jellyfin_url", search=True)},
+             ]},
+            {"label": "Ton", "icon": "sound", "desc": "Lautstärke des Geräts", "items": sound},
+            {"label": "System", "icon": "power", "desc": "Start, Updates und Ausschalten",
+             "items": [
+                 {"kind": "toggle", "label": "Beim Hochfahren starten", "value": cfg.autostart_enabled,
+                  "change": lambda step: cfg.set_autostart(not cfg.autostart_enabled())},
+                 {"kind": "action", "label": "Nach Updates suchen", "run": self.run_update},
+                 {"kind": "header", "label": "Beenden"},
+                 {"kind": "action", "label": "Zurück zum Desktop",
+                  "run": lambda: self.confirm("RaspiTV beenden?", "Zum Desktop", QApplication.quit)},
+                 {"kind": "action", "label": "Neu starten", "run": lambda: self.system("Neu starten", "reboot")},
+                 {"kind": "action", "label": "Ausschalten", "run": lambda: self.system("Ausschalten", "poweroff")},
+             ]},
+            {"label": "Info", "icon": "info", "desc": "Über dieses Gerät",
+             "items": [
+                 {"kind": "info", "label": "Version", "value": cfg.version()},
+                 {"kind": "info", "label": "IP-Adresse", "value": cfg.ip_address()},
+                 {"kind": "info", "label": "Auflösung", "value": f"{self.width()} × {self.height()}"},
+             ]},
         ]
-        for app in self.all_apps:
-            items.append({"kind": "toggle", "label": app["name"],
-                          "value": lambda app=app: app["id"] not in s["hidden"],
-                          "change": lambda step, app=app: toggle_app(app)})
-        items += [
-            {"kind": "header", "label": "Jellyfin"},
-            {"kind": "choice", "label": "Server (OK = neu suchen)",
-             "value": lambda: (s["jellyfin_url"] or "nicht gefunden").replace("http://", ""),
-             "change": lambda step: self.server_url("jellyfin_url", search=True)},
-        ]
-        items.append({"kind": "header", "label": "System"})
-        if self.volume is not None:
-            items.append({"kind": "range", "label": "Lautstärke", "value": lambda: f"{self.volume} %", "change": volume})
-        items += [
-            {"kind": "toggle", "label": "Beim Hochfahren starten", "value": cfg.autostart_enabled,
-             "change": lambda step: cfg.set_autostart(not cfg.autostart_enabled())},
-            {"kind": "action", "label": "Nach Updates suchen", "run": self.run_update},
-            {"kind": "action", "label": "Zurück zum Desktop",
-             "run": lambda: self.confirm("RaspiTV beenden?", "Zum Desktop", QApplication.quit)},
-            {"kind": "action", "label": "Neu starten", "run": lambda: self.system("Neu starten", "reboot")},
-            {"kind": "action", "label": "Ausschalten", "run": lambda: self.system("Ausschalten", "poweroff")},
-            {"kind": "header", "label": "Info"},
-            {"kind": "info", "label": "Version", "value": cfg.version()},
-            {"kind": "info", "label": "IP-Adresse", "value": cfg.ip_address()},
-            {"kind": "info", "label": "Auflösung", "value": f"{self.width()} × {self.height()}"},
-        ]
-        self.items = items
 
     def settings_key(self, key):
+        if key == "home":
+            return self.close_settings()
+        if self.pane == "cats":
+            if key == "back":
+                self.close_settings()
+            elif key in ("up", "down"):
+                self.select_cat(min(max(self.cat + (-1 if key == "up" else 1), 0), len(self.cats) - 1))
+            elif key in ("right", "ok") and any(it["kind"] in FOCUSABLE for it in self.items):
+                self.pane = "items"
+            return
+
         item = self.items[self.item]
-        if key in ("back", "home"):
-            self.close_settings()
+        changes = item["kind"] in ("choice", "range")
+        if key == "back" or (key == "left" and not changes):
+            self.pane = "cats"
         elif key in ("up", "down"):
             step = -1 if key == "up" else 1
             i = self.item + step
@@ -409,7 +441,7 @@ class Home(AccountsUI, QWidget):
         elif item["kind"] == "action":
             if key == "ok":
                 item["run"]()
-        elif key in ("left", "right"):
+        elif key in ("left", "right") and changes:
             item["change"](-1 if key == "left" else 1)
         elif key == "ok" and item["kind"] != "range":
             item["change"](1)
@@ -417,8 +449,8 @@ class Home(AccountsUI, QWidget):
     def settings_layout(self, u):
         """Liefert je Zeile (y, Höhe) relativ zum Listenanfang sowie die Gesamthöhe."""
         rows, y = [], 0.0
-        for item in self.items:
-            h = (3.0 if item["kind"] == "header" else 2.9) * u
+        for i, item in enumerate(self.items):
+            h = (3.4 if item["kind"] == "header" and i else 3.3) * u
             rows.append((y, h))
             y += h
         return rows, y
@@ -453,6 +485,7 @@ class Home(AccountsUI, QWidget):
         self.panel = approach(self.panel, 1.0 if self.view == "settings" else 0.0, 0.22, 0.005)
         if self.view == "settings":
             self.panel_scroll = approach(self.panel_scroll, self.panel_scroll_target(), 0.25, 0.5)
+            self.cat_t = approach(self.cat_t, 1.0, 0.18, 0.01)
         if self.running and time.monotonic() - self.started < 8:
             moving = True  # Lade-Kreis drehen, bis der Player das Bild übernimmt
         if not moving:
@@ -475,7 +508,9 @@ class Home(AccountsUI, QWidget):
     def panel_scroll_target(self):
         u = self.width() / 80
         rows, total = self.settings_layout(u)
-        view = self.height() - 7.5 * u
+        if not rows:
+            return 0.0
+        view = self.height() - 12 * u
         y, h = rows[self.item]
         return min(max(y + h / 2 - view / 2, 0), max(total - view, 0))
 
@@ -556,6 +591,14 @@ class Home(AccountsUI, QWidget):
                 self.paint_osk(p, W, H, u)
             if self.intro < 1:
                 p.fillRect(self.rect(), alpha("#000000", 1 - ease(self.intro)))
+            return
+
+        if self.panel >= 1:  # Einstellungen verdecken die Startseite ganz
+            self.paint_settings(p, W, H, u)
+            if self.dialog:
+                self.paint_dialog(p, W, H, u)
+            if self.osk:
+                self.paint_osk(p, W, H, u)
             return
 
         self.paint_hero_art(p, W, H, u)
@@ -675,7 +718,9 @@ class Home(AccountsUI, QWidget):
         a = getattr(self, "avatar_f", 0.0)
         ac = QPointF(c.x() - 3.6 * u, c.y())
         self.paint_avatar(p, ac, (1.2 + 0.15 * a) * u, self.account, a)
-        label, lx, f = ("Einstellungen", c.x() - r, self.gear) if self.gear >= a else (self.account["name"], ac.x() - 1.5 * u, a)
+        # Beschriftung immer links vom Konto-Kreis, damit sie ihn nicht überdeckt
+        label, f = ("Einstellungen", self.gear) if self.gear >= a else (self.account["name"], a)
+        lx = ac.x() - 1.6 * u
         if f > 0.05:
             p.setOpacity(f)
             self.text(p, QRectF(lx - 12.8 * u, y, 12 * u, h), label, 1.0 * u, TEXT,
@@ -779,40 +824,73 @@ class Home(AccountsUI, QWidget):
         self.text(p, rect, label, size, DARK if focused else TEXT, QFont.DemiBold, Qt.AlignCenter)
 
     def paint_settings(self, p, W, H, u):
+        """Eigene Vollbild-Seite: links Kategorien, rechts die Einstellungen der gewählten Kategorie."""
         t = ease(self.panel)
-        p.fillRect(self.rect(), alpha("#000000", 0.6 * t))
-        width = 32 * u
-        x = W - width * t
-        p.setPen(Qt.NoPen)
-        p.setBrush(PANEL)
-        p.drawRoundedRect(QRectF(x, 0, width + 3 * u, H), 1.8 * u, 1.8 * u)
-        self.text(p, QRectF(x + 2.6 * u, 1.6 * u, width, 3 * u), "Einstellungen", 1.9 * u, QColor("#ffffff"), QFont.DemiBold)
-        if not self.items:
-            return
-
-        top = 6 * u
         p.save()
-        p.setClipRect(QRectF(x, top, width, H - top - 1.5 * u))
+        p.setOpacity(t)
+        p.translate(0, (1 - t) * 2 * u)  # gleitet beim Öffnen leicht von unten herein
+        p.fillRect(QRectF(0, -2 * u, W, H + 4 * u), BG)
+        active = not self.dialog and not self.osk
+
+        # Kategorien-Leiste
+        side_w = 26 * u
+        p.fillRect(QRectF(0, -2 * u, side_w, H + 4 * u), QColor("#15171b"))
+        self.text(p, QRectF(3 * u, 2.6 * u, side_w, 3.4 * u), "Einstellungen", 2.1 * u, QColor("#ffffff"), QFont.DemiBold)
+        y = 9 * u
+        for i, cat in enumerate(self.cats):
+            row = QRectF(1.6 * u, y, side_w - 3.2 * u, 3.4 * u)
+            selected = i == self.cat
+            focused = selected and self.pane == "cats" and active
+            if focused:
+                p.setPen(Qt.NoPen)
+                p.setBrush(TEXT)
+                p.drawRoundedRect(row, row.height() / 2, row.height() / 2)
+            elif selected:
+                p.setPen(Qt.NoPen)
+                p.setBrush(QColor(255, 255, 255, 26))
+                p.drawRoundedRect(row, row.height() / 2, row.height() / 2)
+            color = DARK if focused else (QColor("#ffffff") if selected else SOFT)
+            self.paint_icon(p, cat["icon"], QPointF(row.x() + 2.2 * u, row.center().y()), 1.5 * u, color)
+            self.text(p, row.adjusted(4.2 * u, 0, -1 * u, 0), cat["label"], 1.2 * u, color,
+                      QFont.DemiBold if selected else QFont.Normal)
+            y += 3.8 * u
+        self.text(p, QRectF(3 * u, H - 3.4 * u, side_w - 4 * u, 1.6 * u), f"RaspiTV · {self.account['name']}",
+                  0.9 * u, MUTED)
+
+        if not self.cats:
+            p.restore()
+            return
+        # Inhalt der Kategorie
+        cat = self.cats[self.cat]
+        slide = (1 - ease(self.cat_t)) * 1.5 * u
+        x = side_w + 5 * u + slide
+        width = min(W - x - 6 * u, 50 * u)
+        p.setOpacity(t * (0.25 + 0.75 * ease(self.cat_t)))
+        self.text(p, QRectF(x, 2.4 * u, width, 3.6 * u), cat["label"], 2.6 * u, QColor("#ffffff"), QFont.DemiBold)
+        self.text(p, QRectF(x, 6.0 * u, width, 1.8 * u), cat["desc"], 1.1 * u, MUTED)
+
+        top = 10 * u
+        p.setClipRect(QRectF(x - 1.5 * u, top, width + 3 * u, H - top - 1.5 * u))
         rows, _ = self.settings_layout(u)
+        in_items = self.pane == "items" and active
         for i, (item, (ry, h)) in enumerate(zip(self.items, rows)):
             y = top + ry - self.panel_scroll
             if y + h < top or y > H:
                 continue
             if item["kind"] == "header":
-                head = QFont(self.font_px(0.78 * u, QFont.Bold))
+                head = QFont(self.font_px(0.8 * u, QFont.Bold))
                 head.setLetterSpacing(QFont.AbsoluteSpacing, 0.12 * u)
                 p.setFont(head)
                 p.setPen(MUTED)
-                p.drawText(QRectF(x + 2.6 * u, y, width, h - 0.5 * u), Qt.AlignLeft | Qt.AlignBottom, item["label"].upper())
+                p.drawText(QRectF(x + 1.3 * u, y, width, h - 0.6 * u), Qt.AlignLeft | Qt.AlignBottom, item["label"].upper())
                 continue
-            focused = i == self.item and self.view == "settings" and not self.dialog
-            row = QRectF(x + 1.4 * u, y + 0.15 * u, width - 2.8 * u, h - 0.3 * u)
-            if focused:
-                p.setPen(Qt.NoPen)
-                p.setBrush(TEXT)
-                p.drawRoundedRect(row, row.height() / 2, row.height() / 2)
-            inner = row.adjusted(1.3 * u, 0, -1.3 * u, 0)
-            self.text(p, inner, item["label"], 1.1 * u, DARK if focused else TEXT,
+            focused = in_items and i == self.item
+            row = QRectF(x - 1.3 * u, y + 0.2 * u, width + 2.6 * u, h - 0.4 * u)
+            p.setPen(Qt.NoPen)
+            p.setBrush(TEXT if focused else QColor(255, 255, 255, 12))
+            p.drawRoundedRect(row, 0.9 * u, 0.9 * u)
+            inner = row.adjusted(1.5 * u, 0, -1.5 * u, 0)
+            self.text(p, inner, item["label"], 1.15 * u, DARK if focused else TEXT,
                       QFont.DemiBold if focused else QFont.Normal)
             kind = item["kind"]
             if kind == "toggle":
@@ -820,8 +898,47 @@ class Home(AccountsUI, QWidget):
             elif kind in ("choice", "range"):
                 value = f"‹  {item['value']()}  ›" if focused else item["value"]()
                 self.text(p, inner, value, 1.05 * u, DARK if focused else MUTED, QFont.Normal, Qt.AlignRight | Qt.AlignVCenter)
+            elif kind == "action":
+                self.text(p, inner, "›", 1.5 * u, DARK if focused else MUTED, QFont.Normal, Qt.AlignRight | Qt.AlignVCenter)
             elif kind == "info":
                 self.text(p, inner, item["value"], 1.05 * u, MUTED, QFont.Normal, Qt.AlignRight | Qt.AlignVCenter)
+        p.restore()
+
+    def paint_icon(self, p, name, c, s, color):
+        """Kleine Strich-Symbole für die Kategorien (Mittelpunkt `c`, Größe `s`)."""
+        p.save()
+        p.setPen(QPen(color, 0.11 * s, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+        p.setBrush(Qt.NoBrush)
+        x, y, r = c.x(), c.y(), s / 2
+        if name == "account":
+            p.drawEllipse(QPointF(x, y - 0.32 * r), 0.36 * r, 0.36 * r)
+            p.drawArc(QRectF(x - 0.75 * r, y + 0.15 * r, 1.5 * r, 1.4 * r), 0, 180 * 16)
+        elif name == "display":
+            p.drawRoundedRect(QRectF(x - r, y - 0.7 * r, 2 * r, 1.25 * r), 0.15 * r, 0.15 * r)
+            p.drawLine(QPointF(x - 0.45 * r, y + 0.85 * r), QPointF(x + 0.45 * r, y + 0.85 * r))
+        elif name == "apps":
+            for dx in (-1, 1):
+                for dy in (-1, 1):
+                    p.drawRoundedRect(QRectF(x + dx * 0.5 * r - 0.36 * r, y + dy * 0.5 * r - 0.36 * r, 0.72 * r, 0.72 * r),
+                                      0.15 * r, 0.15 * r)
+        elif name == "server":
+            for dy in (-0.45, 0.45):
+                box = QRectF(x - 0.9 * r, y + dy * r - 0.38 * r, 1.8 * r, 0.76 * r)
+                p.drawRoundedRect(box, 0.15 * r, 0.15 * r)
+                p.drawPoint(QPointF(box.right() - 0.35 * r, box.center().y()))
+        elif name == "sound":
+            p.drawPolygon(QPolygonF([QPointF(x - 0.9 * r, y - 0.3 * r), QPointF(x - 0.5 * r, y - 0.3 * r),
+                                     QPointF(x - 0.05 * r, y - 0.75 * r), QPointF(x - 0.05 * r, y + 0.75 * r),
+                                     QPointF(x - 0.5 * r, y + 0.3 * r), QPointF(x - 0.9 * r, y + 0.3 * r)]))
+            p.drawArc(QRectF(x - 0.25 * r, y - 0.45 * r, 0.9 * r, 0.9 * r), -50 * 16, 100 * 16)
+            p.drawArc(QRectF(x - 0.55 * r, y - 0.85 * r, 1.6 * r, 1.7 * r), -50 * 16, 100 * 16)
+        elif name == "power":
+            p.drawArc(QRectF(x - 0.8 * r, y - 0.7 * r, 1.6 * r, 1.6 * r), 120 * 16, 300 * 16)
+            p.drawLine(QPointF(x, y - 0.95 * r), QPointF(x, y - 0.1 * r))
+        elif name == "info":
+            p.drawEllipse(c, 0.9 * r, 0.9 * r)
+            p.drawLine(QPointF(x, y - 0.05 * r), QPointF(x, y + 0.45 * r))
+            p.drawPoint(QPointF(x, y - 0.42 * r))
         p.restore()
 
     def paint_switch(self, p, inner, on, focused, u):
