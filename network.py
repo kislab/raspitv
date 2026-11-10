@@ -3,8 +3,10 @@
 Alle Funktionen blockieren (Suchen und Verbinden dauern Sekunden) – RaspiTV ruft sie daher im
 Hintergrund auf. Fehler werden als Text zurückgegeben, nie als Ausnahme.
 """
+import os
 import re
 import subprocess
+import threading
 import time
 
 # ---------- Hilfen ----------
@@ -166,13 +168,129 @@ def bt_scan(seconds=10):
 
 
 def bt_pair(mac):
-    """Koppeln, vertrauen, verbinden – ohne PIN-Abfrage (Kopfhörer, Lautsprecher, Controller)."""
-    _run(["bluetoothctl", "--agent", "NoInputNoOutput", "--timeout", "20", "pair", mac], timeout=30)
-    if not any(d["mac"] == mac for d in _devices("Paired")):
-        return False, "Koppeln fehlgeschlagen – Gerät im Kopplungsmodus?"
+    """Koppeln, vertrauen, verbinden – ohne PIN (Kopfhörer, Lautsprecher, Controller, Fernbedienungen).
+
+    Manche Geräte (z. B. Amazon-Fernbedienungen) lehnen ein vom Pi gestartetes „pair“ ab, fragen nach
+    dem Verbinden aber selbst nach Kopplung – die beantwortet der RaspiTV-Agent (BtAgent) mit „yes“.
+    """
     _run(["bluetoothctl", "trust", mac], timeout=10)
-    ok, out = _run(["bluetoothctl", "connect", mac], timeout=25)
-    return True, "Gekoppelt und verbunden" if ok else "Gekoppelt (noch nicht verbunden)"
+    ok, _ = _run(["bluetoothctl", "--timeout", "20", "pair", mac], timeout=30)
+    if not _paired(mac):
+        _run(["bluetoothctl", "--timeout", "15", "connect", mac], timeout=25)
+        for _ in range(20):  # warten, bis das Gerät selbst gekoppelt hat
+            if _paired(mac):
+                break
+            time.sleep(1)
+    if not _paired(mac):
+        _run(["bluetoothctl", "remove", mac], timeout=10)
+        return False, "Koppeln fehlgeschlagen – Gerät im Kopplungsmodus?"
+    ok, _ = _run(["bluetoothctl", "connect", mac], timeout=25)
+    return True, "Gekoppelt und verbunden" if ok or _connected(mac) else "Gekoppelt (noch nicht verbunden)"
+
+
+def _info(mac):
+    return _run(["bluetoothctl", "info", mac], timeout=5)[1]
+
+
+def _paired(mac):
+    return "Paired: yes" in _info(mac)
+
+
+def _connected(mac):
+    return "Connected: yes" in _info(mac)
+
+
+class BtAgent:
+    """Bluetooth-Agent von RaspiTV: beantwortet Kopplungsanfragen, solange RaspiTV läuft – statt des
+    Desktop-Fensters („… has requested a pairing“). Angenommen wird nur, wenn `allow()` wahr ist
+    (Bluetooth-Seite der Einstellungen offen oder Koppeln läuft); sonst wird abgelehnt."""
+
+    QUESTION = re.compile(r"(Accept pairing|Confirm passkey \d+|Authorize service [\w-]+|Request confirmation).*?\(yes/no\)")
+
+    def __init__(self, allow):
+        self.allow = allow
+        self.proc = None
+        threading.Thread(target=self.run, daemon=True).start()
+
+    def run(self):
+        while True:  # bluetoothctl neu starten, falls es endet (z. B. Bluetooth-Dienst neu gestartet)
+            try:
+                self.proc = subprocess.Popen(["bluetoothctl"], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                             stderr=subprocess.STDOUT)
+            except OSError:
+                return
+            self.send("agent KeyboardDisplay")
+            self.send("default-agent")
+            buf = ""
+            while True:
+                chunk = os.read(self.proc.stdout.fileno(), 4096)
+                if not chunk:
+                    break
+                buf = (buf + re.sub(r"\x1b\[[0-9;]*m|\r", "", chunk.decode(errors="replace")))[-2000:]
+                match = self.QUESTION.search(buf)
+                if match:
+                    self.send("yes" if self.allow() else "no")
+                    buf = buf[match.end():]
+            self.proc.wait()
+            time.sleep(3)
+
+    def send(self, line):
+        try:
+            self.proc.stdin.write((line + "\n").encode())
+            self.proc.stdin.flush()
+        except (OSError, AttributeError):
+            pass
+
+    def stop(self):
+        if self.proc and self.proc.poll() is None:
+            self.proc.terminate()
+
+
+def bt_remotes():
+    """Gekoppelte Fernbedienungen (Gerätetyp „Fernbedienung“, Amazon „AR“, Controller): [{"mac", "name"}]."""
+    remotes = []
+    for dev in _devices("Paired"):
+        info = _info(dev["mac"])
+        if "Appearance: 0x0180" in info or "Icon: input-gaming" in info or dev["name"] == "AR":
+            remotes.append(dev)
+    return remotes
+
+
+class RemoteKeeper:
+    """Hält gekoppelte Fernbedienungen verbunden.
+
+    Schlafende Fernbedienungen (z. B. Amazon) wecken sich per Tastendruck mit einem gezielten
+    Funkruf an den Pi – den nimmt der Pi nur an, während er gerade eine Verbindung zu ihr aufbaut.
+    Deshalb läuft für jede getrennte Fernbedienung ständig ein Verbindungsversuch im Hintergrund.
+    `paused()` hält das an (Bluetooth-Suche/Koppeln in den Einstellungen)."""
+
+    def __init__(self, remote_macs, paused):
+        self.remote_macs = remote_macs
+        self.paused = paused
+        threading.Thread(target=self.run, daemon=True).start()
+
+    def run(self):
+        while True:
+            macs = list(self.remote_macs())
+            if not macs or self.paused() or not bt_enabled():
+                time.sleep(3)
+                continue
+            waiting = [m for m in macs if not _connected(m)]
+            if not waiting:
+                time.sleep(3)
+                continue
+            for mac in waiting:
+                if self.paused():
+                    break
+                # BlueZ wartet bis zu ~30 s auf das Gerät; danach einfach neu versuchen
+                _run(["bluetoothctl", "--timeout", "35", "connect", mac], timeout=45)
+            time.sleep(0.5)
+
+
+def bt_remote_paired():
+    """Name der (ersten) gekoppelten Fernbedienung oder ""."""
+    remotes = bt_remotes()
+    return remotes[0]["name"] if remotes else ""
 
 
 def bt_toggle_connection(mac, connected):

@@ -66,7 +66,8 @@ Item {
         id: gear
         readonly property real r: (1.3 + 0.15 * header.gearF) * app.u
         width: 2 * r; height: width; radius: r
-        x: parent.width - app.edge - 1.3 * app.u - r
+        // ganz rechts sitzt das Fernbedienungs-Symbol (falls gekoppelt), das Zahnrad links daneben
+        x: parent.width - app.edge - 1.3 * app.u - r - (remoteState.visible ? remoteState.width + 1.0 * app.u : 0)
         y: header.y0 + header.h / 2 - r
         color: Qt.rgba(1 - (1 - 232 / 255) * header.gearF, 1 - (1 - 234 / 255) * header.gearF,
                        1 - (1 - 237 / 255) * header.gearF, (36 + (255 - 36) * header.gearF) / 255)
@@ -102,6 +103,32 @@ Item {
             height: parent.height
             text: s.wifiName
             size: 0.95 * app.u
+            color: app.soft
+        }
+    }
+    // Fernbedienung: Symbol rechts neben dem Zahnrad – hell = verbunden, gedämpft und durchgestrichen = getrennt
+    Item {
+        id: remoteState
+        readonly property var r: s.remote
+        visible: !!r
+        width: 1.6 * app.u
+        height: header.h
+        x: parent.width - app.edge - width
+        y: header.y0
+        opacity: r && r.connected ? 1 : 0.45
+        Behavior on opacity { NumberAnimation { duration: app.ms(200) } }
+        Icon {
+            id: remoteIcon
+            anchors.centerIn: parent
+            width: 1.5 * app.u
+            name: "remote"
+            color: remoteState.r && remoteState.r.connected ? app.text : app.soft
+        }
+        Rectangle {  // Querstrich, solange getrennt
+            visible: !!remoteState.r && !remoteState.r.connected
+            anchors.centerIn: parent
+            width: 1.8 * app.u; height: 0.13 * app.u; radius: height / 2
+            rotation: -45
             color: app.soft
         }
     }

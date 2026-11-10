@@ -19,8 +19,17 @@ HOST, PORT = "127.0.0.1", 8765
 KEYS = {"up", "down", "left", "right", "ok", "back", "home", "menu"}
 
 
+def press(key):
+    """Wird von start() ersetzt; vorher gehen Tasten verloren."""
+
+
 def start(on_key, get_status):
-    """Startet den Server in einem Hintergrund-Thread. on_key wird dort aufgerufen."""
+    """Startet den Server in einem Hintergrund-Thread. on_key wird dort aufgerufen.
+
+    Danach nimmt `remote.press(key)` Tasten direkt angeschlossener Fernbedienungen an (remote_input.py):
+    sie gehen an RaspiTV und – wie Tasten über POST /key – an die TV-Erweiterung im Player.
+    """
+    global press
     listeners = set()
     lock = threading.Lock()
 
@@ -92,6 +101,13 @@ def start(on_key, get_status):
             if origin is None and key != "menu":  # nicht an die Erweiterung zurückschicken; "menu" gilt nur RaspiTV
                 publish(key)
             self.reply({"ok": True})
+
+    def press_key(key):
+        if key != "playpause":
+            on_key(key)
+        if key != "menu":  # "menu" gilt nur RaspiTV
+            publish(key)
+    press = press_key
 
     server = ThreadingHTTPServer((HOST, PORT), Handler)
     server.daemon_threads = True

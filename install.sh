@@ -85,4 +85,13 @@ if [ "$BOOTLOGO" = 1 ] && command -v plymouth-set-default-theme >/dev/null; then
   sudo "$DIR/boot/install-bootlogo.sh"
 fi
 
+# 6. Bluetooth: Zufallsadresse („Privacy“) – sonst lehnen Amazon-/Fire-TV-Fernbedienungen das Koppeln ab
+BTCONF=/etc/bluetooth/main.conf
+if [ -f "$BTCONF" ] && ! grep -q '^Privacy *= *device' "$BTCONF"; then
+  say "Stelle Bluetooth für Fernbedienungen ein (Privacy = device)"
+  sudo cp "$BTCONF" "$BTCONF.raspitv-backup"
+  sudo sed -i '0,/^\[General\]/s//[General]\nPrivacy = device/' "$BTCONF"
+  sudo systemctl restart bluetooth || true
+fi
+
 say "Fertig! RaspiTV startest du über das Desktop-Symbol oder das Startmenü (Unterhaltung → RaspiTV)."

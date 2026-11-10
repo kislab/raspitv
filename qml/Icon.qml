@@ -77,6 +77,13 @@ Canvas {
                 g.beginPath(); g.arc(x, cy, w * 0.42 * r, -Math.PI * 0.78, -Math.PI * 0.22); g.stroke()
             }
             g.beginPath(); g.arc(x, cy, 0.09 * s, 0, 2 * Math.PI); g.fill()
+        } else if (name === "remote") {
+            // schmale Fernbedienung: Gehäuse, Steuerkreuz-Ring, zwei Tasten
+            rrect(x - 0.38 * r, y - 0.95 * r, 0.76 * r, 1.9 * r, 0.3 * r); g.stroke()
+            g.lineWidth = 0.08 * s
+            g.beginPath(); g.arc(x, y - 0.4 * r, 0.2 * r, 0, 2 * Math.PI); g.stroke()
+            g.beginPath(); g.arc(x, y + 0.2 * r, 0.07 * s, 0, 2 * Math.PI); g.fill()
+            g.beginPath(); g.arc(x, y + 0.55 * r, 0.07 * s, 0, 2 * Math.PI); g.fill()
         } else if (name === "plus") {
             line(x - 0.5 * r, y, x + 0.5 * r, y)
             line(x, y - 0.5 * r, x, y + 0.5 * r)

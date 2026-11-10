@@ -35,6 +35,7 @@ except ImportError:
 
 import network
 import remote
+import remote_input
 import settings as cfg
 from profiles_ui import AccountsUI
 
@@ -105,6 +106,10 @@ class Home(AccountsUI, QObject):
         self.wifi = {"on": False, "nets": [], "scanning": False}
         self.bt = {"on": False, "paired": [], "found": [], "scanning": False}
         self.wifi_name = ""            # verbundenes WLAN für die Kopfzeile (alle 15 s im Hintergrund geprüft)
+        self.remote_name = ""          # gekoppelte Bluetooth-Fernbedienung (Kopfzeile)
+        self.remote_macs = []          # Adressen gekoppelter Fernbedienungen (für remote_input)
+        self.remote_input = None       # liest Fernbedienungen direkt (in main() gesetzt)
+        self.pairing_until = 0.0       # bis wann der Bluetooth-Agent Kopplungen annimmt
         self.ticks = 0
         self.volume = None
         self.dialog = None             # {"text", "buttons": [(label, fn)], "index", "app"?}
@@ -144,6 +149,8 @@ class Home(AccountsUI, QObject):
         state = {
             "view": self.view, "row": self.row, "col": self.col, "storeCol": self.store_col,
             "headCol": self.head_col, "moving": self.moving, "wifiName": self.wifi_name,
+            "remote": {"name": self.remote_name,
+                       "connected": bool(self.remote_input and self.remote_input.open)} if self.remote_name else None,
             "animations": s["animations"], "clock24": s["clock_24h"], "tileScale": cfg.TILE_SIZES[s["tile_size"]],
             "account": self.account_info(self.account),
             "apps": [self.info[a["id"]] for a in self.apps],
@@ -466,9 +473,31 @@ class Home(AccountsUI, QObject):
         self.push()  # u. a. „covered“: Lade-Animation anhalten, sobald der Player vorne liegt
 
     def update_wifi_name(self):
-        def done(name):
-            self.wifi_name = name
-        self.run_bg(network.wifi_current, done)
+        def done(result):
+            self.wifi_name, remotes = result
+            self.set_remotes(remotes)
+        self.run_bg(lambda: (network.wifi_current(), network.bt_remotes()), done)
+
+    def set_remotes(self, remotes):
+        self.remote_name = remotes[0]["name"] if remotes else ""
+        self.remote_macs = [r["mac"] for r in remotes]
+
+    def bt_busy(self):
+        """Läuft in den Einstellungen gerade eine Bluetooth-Suche oder Kopplung?"""
+        return self.bt["scanning"] or time.monotonic() < self.pairing_until
+
+    def bt_allow(self):
+        """Darf der Bluetooth-Agent eine Kopplung annehmen? Nur auf der Bluetooth-Seite bzw. beim Koppeln."""
+        return self.sub == "bt" or time.monotonic() < self.pairing_until
+
+    def remote_extra(self, key):
+        """Tasten der Fernbedienung, die RaspiTV selbst erledigt (aus dem Lese-Thread)."""
+        if key in ("volumeup", "volumedown"):
+            cfg.change_volume(5 if key == "volumeup" else -5)
+        elif key == "mute":
+            subprocess.run(["wpctl", "set-mute", cfg.SINK, "toggle"], timeout=2, check=False)
+        elif key == "playpause":
+            remote.press("playpause")
 
     # ---------- Einstellungen ----------
 
@@ -797,11 +826,14 @@ class Home(AccountsUI, QObject):
 
     def bt_pair(self, dev):
         self.busy(f"Kopple {dev['name']} …")
+        self.pairing_until = time.monotonic() + 90
 
         def done(result):
             ok, message = result
+            self.pairing_until = time.monotonic() + 5
             self.notice(f"{dev['name']}: {message}")
             self.bt["found"] = [d for d in self.bt["found"] if d["mac"] != dev["mac"]] if ok else self.bt["found"]
+            self.set_remotes(network.bt_remotes())
             self.refresh_bt()
         self.run_bg(lambda: network.bt_pair(dev["mac"]), done)
 
@@ -820,6 +852,7 @@ class Home(AccountsUI, QObject):
 
         def remove():
             ok, message = network.bt_remove(dev["mac"])
+            self.set_remotes(network.bt_remotes())
             self.notice(message)
             self.refresh_bt()
         self.notice(dev["name"], [("Abbrechen", self.close_dialog),
@@ -868,8 +901,16 @@ def main():
         remote.start(on_key, player.running)
     except OSError:
         sys.exit("RaspiTV läuft bereits (Port 8765 ist belegt).")
+    # Bluetooth-Fernbedienungen direkt lesen (auch während der Player vorne liegt)
+    home.set_remotes(network.bt_remotes())
+    home.remote_input = remote_input.RemoteInput(remote.press, home.remote_extra, lambda: home.remote_macs)
+    # Kopplungsanfragen beantwortet RaspiTV selbst – kein Desktop-Fenster über der Oberfläche
+    agent = network.BtAgent(home.bt_allow)
+    # Schlafende Fernbedienung beim nächsten Tastendruck sofort wieder verbinden
+    network.RemoteKeeper(lambda: home.remote_macs, home.bt_busy)
 
     app.aboutToQuit.connect(player.stop)
+    app.aboutToQuit.connect(agent.stop)
     # Auch beim Beenden von außen (kill, Abmelden) den Player mit schließen
     signal.signal(signal.SIGTERM, lambda *_: app.quit())
     signal.signal(signal.SIGINT, lambda *_: app.quit())

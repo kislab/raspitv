@@ -311,7 +311,10 @@
   window.addEventListener("keyup", onKey, true);
 
   chrome.runtime.onMessage.addListener((message) => {
-    if (message.key) handle(message.key, false);
+    if (message.key === "playpause") {  // Play/Pause der Fernbedienung: laufendes Video umschalten
+      const video = [...document.querySelectorAll("video")].find((v) => v.readyState > 0);
+      if (video) video.paused ? video.play() : video.pause();
+    } else if (message.key) handle(message.key, false);
   });
   setInterval(() => chrome.runtime.sendMessage({ cmd: "ping" }).catch(() => {}), 20000);
   chrome.runtime.sendMessage({ cmd: "ping" }).catch(() => {});
