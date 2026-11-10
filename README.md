@@ -2,16 +2,19 @@
 
 Mediacenter für den Raspberry Pi 4 im Stil von Google TV – bedienbar mit der Fernbedienung.
 
-- **Startseite** (natives PyQt5-Programm): App-Kacheln für Netflix, Disney+, YouTube, Prime Video,
-  Twitch, ARD, ZDF, Jellyfin und Spotify, Einstellungen, Zurück zum Desktop.
+- **Startseite** (Python + Qt Quick/QML, von der Grafikeinheit gezeichnet): App-Kacheln für Netflix,
+  Disney+, YouTube, Prime Video, Twitch, ARD, ZDF, Jellyfin und Spotify, Einstellungen, Zurück zum Desktop.
+  Logik und Zustand in Python (`raspitv.py`, `profiles_ui.py`), Oberfläche in `qml/`.
+- **App-Store**: Reihe „Verfügbare Apps“ unter „Deine Apps“ (ARTE, Joyn, RTL+, Apple TV+ …) – OK installiert;
+  deinstallieren über das Kachel-Menü oder Einstellungen → Apps.
 - **Player**: Chromium im Kioskmodus (nur für DRM-Videos), mit eigener Erweiterung `tv-extension/`,
   die Netflix, Disney+ und Prime Video wie die jeweilige TV-App aussehen lässt.
 - **Jellyfin**: der Server im Heimnetz wird automatisch gefunden (Einstellungen → Jellyfin).
   Anmelden ohne Tastatur: „Quick Connect verwenden“ wählen und den Code in der Jellyfin-App am Handy bestätigen.
 - **Konten**: „Wer schaut?“ wie bei Google TV. Jedes Konto hat eigene Logins bei Netflix, Disney+,
   YouTube, Prime Video & Co. (eigenes Browser-Profil), eigene Kachel-Reihenfolge und optional eine PIN.
-  Wechseln: Konto-Symbol oben rechts; bearbeiten: OK auf einem Konto lange drücken.
-- **Kacheln anordnen**: OK lange gedrückt halten → Menü mit Öffnen, Verschieben, Ausblenden.
+  Wechseln: Konto-Symbol oben links; bearbeiten: OK auf einem Konto lange drücken.
+- **Kacheln anordnen**: OK lange gedrückt halten → Menü mit Öffnen, Verschieben, Deinstallieren.
 - **Fernbedienung**: HTTP-Schnittstelle auf `127.0.0.1:8765` (`POST /key {"key": "up"}`, `"menu"` = langes OK, `GET /status`).
 
 ## Installation
@@ -22,7 +25,7 @@ Ein Befehl im Terminal des Raspberry Pi (Raspberry Pi OS):
 curl -fsSL https://raw.githubusercontent.com/kislab/raspitv/main/install.sh | bash
 ```
 
-Das lädt RaspiTV nach `~/raspitv`, installiert fehlende Pakete (`python3-pyqt5`, `chromium`,
+Das lädt RaspiTV nach `~/raspitv`, installiert fehlende Pakete (`python3-pyqt5`, Qt Quick, `chromium`,
 `libwidevinecdm0` … – fragt dafür nach dem sudo-Passwort) und legt RaspiTV als Programm an:
 Symbol auf dem Desktop, Eintrag im Startmenü (Unterhaltung) und Autostart beim Hochfahren
 (Terminal öffnet sich und lädt RaspiTV). Ohne Autostart: `… | bash -s -- --no-autostart`.

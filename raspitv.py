@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""RaspiTV – native TV-Oberfläche im Google-TV-Stil (PyQt5, komplett selbst gezeichnet).
+"""RaspiTV – native TV-Oberfläche im Google-TV-Stil.
+
+Aufbau: Python hält Zustand und Logik (Tasten, Konten, Einstellungen, Player); die Oberfläche ist in
+QML/Qt Quick geschrieben (qml/) und wird von der Grafikeinheit gezeichnet. Python gibt nach jeder
+Änderung einen Schnappschuss des Zustands (`state`, JSON) an QML, QML zeichnet und animiert ihn.
 
 Bedienung: Pfeiltasten, Enter = OK, Esc/Backspace = Zurück, Pos1 = Home.
 Fernbedienungen speisen dieselben Tasten über remote.py ein.
@@ -18,23 +22,22 @@ os.environ.update(gui_env())
 if os.environ.get("WAYLAND_DISPLAY"):
     os.environ.setdefault("QT_QPA_PLATFORM", "wayland;xcb")
 
-from PyQt5.QtCore import QLocale, QDateTime, QPointF, QRectF, Qt, QTimer, pyqtSignal
-from PyQt5.QtGui import QColor, QFont, QFontMetricsF, QLinearGradient, QPainter, QPen, QPixmap, QPolygonF, QRadialGradient
-from PyQt5.QtWidgets import QApplication, QWidget
+from PyQt5.QtCore import QObject, Qt, QTimer, QUrl, pyqtProperty, pyqtSignal
+from PyQt5.QtGui import QColor, QFont, QGuiApplication, QImage, QPainter
+
+try:
+    from PyQt5.QtQuick import QQuickView
+except ImportError:
+    sys.exit("RaspiTV braucht Qt Quick. Bitte installieren:\n"
+             "  sudo apt-get install -y python3-pyqt5.qtquick qml-module-qtquick2 "
+             "qml-module-qtquick-window2 qml-module-qtgraphicaleffects")
 
 import remote
 import settings as cfg
 from profiles_ui import AccountsUI
 
 ROOT = Path(__file__).resolve().parent
-BG = QColor("#0e1013")
-PANEL = QColor("#1b1d22")
-CARD = QColor("#22252b")
-TEXT = QColor("#e8eaed")
-SOFT = QColor("#c4c7cc")
-MUTED = QColor("#9aa0a6")
-DARK = QColor("#202124")
-BLUE = QColor("#8ab4f8")
+CACHE = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "raspitv" / "logos"
 
 KEYMAP = {
     Qt.Key_Up: "up", Qt.Key_Down: "down", Qt.Key_Left: "left", Qt.Key_Right: "right",
@@ -44,27 +47,48 @@ KEYMAP = {
 }
 HEADER, APPS, STORE = 0, 1, 2                         # Zeilen der Startseite
 FOCUSABLE = ("choice", "toggle", "action", "range")   # wählbare Einstellungs-Zeilen
-FOCUS_SCALE = 1.12
 LONG_PRESS = 0.6                                      # Sekunden OK halten für das Kachel-Menü
+COVERED_AFTER = 8                                     # Sekunden nach dem Start: Player liegt sicher vorn
 
 
-def ease(t):
-    return 1 - (1 - t) ** 3
+def logo_url(app, variant):
+    """Datei-URL des Logos (logos/<id>.png bzw. <id>_hero.png); einfarbige Logos werden einmal
+    umgefärbt und im Cache abgelegt. Leer, wenn die App kein Logo hat."""
+    files = [ROOT / "logos" / f"{app['id']}.png"]
+    if variant == "hero":
+        files.insert(0, ROOT / "logos" / f"{app['id']}_hero.png")
+    source = next((f for f in files if f.exists()), None)
+    if source is None:
+        return ""
+    if not app.get("tint"):
+        return QUrl.fromLocalFile(str(source)).toString()
+    target = CACHE / f"{source.stem}-{app['tint'].lstrip('#')}.png"
+    if not target.exists() or target.stat().st_mtime < source.stat().st_mtime:
+        image = QImage(str(source)).convertToFormat(QImage.Format_ARGB32_Premultiplied)
+        painter = QPainter(image)
+        painter.setCompositionMode(QPainter.CompositionMode_SourceIn)
+        painter.fillRect(image.rect(), QColor(app["tint"]))
+        painter.end()
+        CACHE.mkdir(parents=True, exist_ok=True)
+        image.save(str(target))
+    return QUrl.fromLocalFile(str(target)).toString()
 
 
-def alpha(color, a):
-    c = QColor(color)
-    c.setAlphaF(max(0.0, min(1.0, a)))
-    return c
-
-
-class Home(AccountsUI, QWidget):
-    key = pyqtSignal(str)  # auch aus dem Fernbedienungs-Thread auslösbar
+class Home(AccountsUI, QObject):
+    """Zustand und Logik der Oberfläche. QML liest `state` und zeichnet danach."""
+    key = pyqtSignal(str)       # auch aus dem Fernbedienungs-Thread auslösbar
+    stateChanged = pyqtSignal()
 
     def __init__(self, apps, player):
         super().__init__()
         self.all_apps = apps
         self.player = player
+        self.window = None             # QQuickView, wird in main() gesetzt
+        self._state = "{}"
+        self.info = {a["id"]: dict(
+            id=a["id"], name=a["name"], tag=a.get("tag", "App"), desc=a.get("desc", ""),
+            bg=a["bg"], heroBg=a.get("hero_bg", a["bg"]), fg=a["fg"], accent=a["accent"],
+            logo=logo_url(a, "tile"), heroLogo=logo_url(a, "hero")) for a in apps}
         self.init_accounts()           # Konto (eigene Logins und Einstellungen) und dessen Einstellungen
         self.row = APPS
         self.col = 0                   # gewählte App
@@ -74,41 +98,83 @@ class Home(AccountsUI, QWidget):
         self.items, self.item = [], 0  # Zeilen der gewählten Kategorie und gewählte Zeile
         self.pane = "cats"             # Fokus in den Einstellungen: "cats" (links) | "items" (rechts)
         self.volume = None
-        self.dialog = None             # {"text", "buttons": [(label, fn)], "index"}
-        self.menu = None               # Kachel-Menü: {"items": [(label, fn)], "index"}
+        self.dialog = None             # {"text", "buttons": [(label, fn)], "index", "app"?}
+        self.menu = None               # Kachel-Menü: {"items": [(label, fn)], "index", "title", "anchor", "at"}
         self.moving = False            # Kachel wird gerade verschoben
         self.ok_down = None            # Zeitpunkt, seit dem OK gedrückt gehalten wird
-        self.tile_rects = []           # zuletzt gezeichnete Kachel-Positionen
         self.running = None            # gestarteter Dienst, solange der Player läuft
         self.started = 0.0
-
-        # animierte Werte
-        self.scale = []
-        self.scroll = 0.0
-        self.store_scale = []
-        self.store_scroll = 0.0
-        self.vscroll = 0.0             # Startseite nach oben geschoben, solange der App-Store gewählt ist
-        self.hero = self.hero_prev = None
-        self.hero_t = 1.0
-        self.intro = 0.0               # Einblenden beim Start
-        self.panel = 0.0               # Einstellungs-Seite: 0 = zu, 1 = offen
-        self.panel_scroll = 0.0
-        self.cat_t = 1.0               # Einblenden des Inhalts nach Kategorie-Wechsel
-        self.gear = 0.0                # Fokus des Zahnrads
-        self.last_step = time.monotonic()
-        self.art_cache = {}            # fertig gezeichnete Banner je App und Fenstergröße
-        self.logo_cache = {}           # geladene und skalierte Logos
         self.refresh_apps()
 
-        self.setWindowTitle("RaspiTV")
-        self.setCursor(Qt.BlankCursor)
         self.key.connect(self.handle)
-        self.anim = QTimer(self, interval=16, timeout=self.step)
-        self.anim.start()
         QTimer(self, interval=1000, timeout=self.tick).start()
+        self.push()
+
+    # ---------- Zustand für QML ----------
+
+    @pyqtProperty(str, notify=stateChanged)
+    def state(self):
+        return self._state
+
+    def width(self):
+        return self.window.width() if self.window else 1920
+
+    def height(self):
+        return self.window.height() if self.window else 1080
+
+    def push(self):
+        """Schnappschuss des Zustands an QML geben (nur wenn sich etwas geändert hat)."""
+        s = self.settings
+        menu = self.menu and {"title": self.menu.get("title", ""), "items": [label for label, _ in self.menu["items"]],
+                              "index": self.menu["index"], "anchor": self.menu.get("anchor", "tile"),
+                              "at": self.menu.get("at", self.col)}
+        dialog = self.dialog and {"text": self.dialog["text"], "buttons": [label for label, _ in self.dialog["buttons"]],
+                                  "index": self.dialog["index"],
+                                  "app": self.info[self.dialog["app"]["id"]] if self.dialog.get("app") else None}
+        state = {
+            "view": self.view, "row": self.row, "col": self.col, "storeCol": self.store_col,
+            "headCol": self.head_col, "moving": self.moving,
+            "animations": s["animations"], "clock24": s["clock_24h"], "tileScale": cfg.TILE_SIZES[s["tile_size"]],
+            "account": self.account_info(self.account),
+            "apps": [self.info[a["id"]] for a in self.apps],
+            "store": [self.info[a["id"]] for a in self.store],
+            "allApps": [self.info[a["id"]] for a in self.all_apps],
+            "hero": self.focused_app()["id"],
+            "menu": menu, "dialog": dialog,
+            "covered": bool(self.running and time.monotonic() - self.started > COVERED_AFTER),
+            "settings": {"cats": [{k: c[k] for k in ("label", "icon", "desc")} for c in self.cats],
+                         "cat": self.cat, "pane": self.pane, "item": self.item,
+                         "items": [self.item_info(it) for it in self.items]},
+            "profiles": {"list": [self.account_info(a) for a in self.acc_data["accounts"]], "prof": self.prof},
+            "osk": dict({k: self.osk[k] for k in ("title", "value", "mode", "row", "col", "error")},
+                        rows=self.osk_rows()) if self.osk else None,
+        }
+        text = json.dumps(state, ensure_ascii=False)
+        if text != self._state:
+            self._state = text
+            self.stateChanged.emit()
+
+    @staticmethod
+    def account_info(account):
+        return {"id": account["id"], "name": account["name"], "color": account["color"],
+                "initial": account["name"][:1].upper(), "pin": bool(account.get("pin"))}
+
+    @staticmethod
+    def item_info(item):
+        kind = item["kind"]
+        info = {"kind": kind, "label": item["label"], "hint": item.get("hint")}
+        if kind == "toggle":
+            info["on"] = bool(item["value"]())
+        elif kind in ("choice", "range"):
+            info["value"] = str(item["value"]())
+        elif kind == "info":
+            info["value"] = str(item["value"])
+        return info
+
+    # ---------- Apps ----------
 
     def refresh_apps(self):
-        """Sichtbare Apps neu bestimmen (nach Änderungen in den Einstellungen)."""
+        """Installierte und verfügbare Apps neu bestimmen (nach Änderungen in den Einstellungen)."""
         known = set(self.settings["known"])
         new = [a["id"] for a in self.all_apps if a["id"] not in known]
         if new:  # neue Apps im Katalog: Store-Apps erst einmal nicht installieren
@@ -121,15 +187,10 @@ class Home(AccountsUI, QWidget):
         ordered = sorted(self.all_apps, key=lambda a: order.get(a["id"], len(order) + self.all_apps.index(a)))
         self.apps = [a for a in ordered if a["id"] not in hidden] or ordered[:1]
         self.store = [a for a in self.all_apps if a not in self.apps]
-        self.scale = [1.0] * len(self.apps)
-        self.store_scale = [1.0] * len(self.store)
         self.col = min(self.col, len(self.apps) - 1)
         self.store_col = min(self.store_col, max(len(self.store) - 1, 0))
         if self.row == STORE and not self.store:
             self.row = APPS
-        if self.hero not in self.all_apps or self.hero is not self.focused_app():
-            self.hero = self.hero_prev = self.focused_app()
-            self.hero_t = 1.0
 
     def focused_app(self):
         """App, die gerade im Banner gezeigt wird (gewählte Kachel der Startseite oder des Stores)."""
@@ -139,8 +200,9 @@ class Home(AccountsUI, QWidget):
 
     # ---------- Eingabe ----------
 
-    def keyPressEvent(self, event):
+    def key_press(self, event):
         if self.osk_type(event):  # echte Tastatur tippt in die Bildschirmtastatur
+            self.push()
             return
         key = KEYMAP.get(event.key())
         if key == "ok" and self.long_press_possible():
@@ -151,14 +213,14 @@ class Home(AccountsUI, QWidget):
         if key and not (key == "ok" and event.isAutoRepeat()):
             self.handle(key)
 
-    def keyReleaseEvent(self, event):
+    def key_release(self, event):
         if KEYMAP.get(event.key()) != "ok" or event.isAutoRepeat() or self.ok_down is None:
             return
         self.ok_down = None  # kurz gedrückt: normales OK
         self.handle("ok")
 
     def long_press_possible(self):
-        """Langes Drücken gibt es nur auf einer Kachel der Startseite."""
+        """Langes Drücken gibt es nur auf einer Kachel der Startseite und in „Wer schaut?“."""
         return (not self.running and not self.dialog and not self.menu and not self.moving and not self.osk
                 and (self.view == "home" and self.row == APPS or self.view == "profiles"))
 
@@ -207,13 +269,7 @@ class Home(AccountsUI, QWidget):
                 self.open_profiles()
             else:
                 self.open_settings()
-
-        if self.focused_app() is not self.hero:
-            self.hero_prev, self.hero, self.hero_t = self.hero, self.focused_app(), 0.0
-        if not self.anim.isActive():
-            self.last_step = time.monotonic()
-            self.anim.start()
-        self.update()
+        self.push()
 
     def dialog_key(self, key):
         buttons = self.dialog["buttons"]
@@ -232,7 +288,7 @@ class Home(AccountsUI, QWidget):
         items = [("Öffnen", lambda: self.launch(app)), ("Verschieben", self.start_moving)]
         if len(self.apps) > 1:
             items.append(("Deinstallieren", lambda: self.ask_uninstall(app)))
-        self.menu = {"items": items, "index": 0, "title": app["name"]}
+        self.menu = {"items": items, "index": 0, "title": app["name"], "anchor": "tile", "at": self.col}
 
     def menu_key(self, key):
         items = self.menu["items"]
@@ -248,7 +304,6 @@ class Home(AccountsUI, QWidget):
 
     def start_moving(self):
         self.moving = True
-        self.moving_from = self.col
 
     def move_key(self, key):
         if key in ("left", "right"):
@@ -256,7 +311,6 @@ class Home(AccountsUI, QWidget):
             if 0 <= j < len(self.apps):
                 a = self.apps
                 a[self.col], a[j] = a[j], a[self.col]
-                self.scale[self.col], self.scale[j] = self.scale[j], self.scale[self.col]
                 self.col = j
         elif key in ("ok", "back", "home", "menu", "up", "down"):
             self.moving = False
@@ -273,7 +327,7 @@ class Home(AccountsUI, QWidget):
     # ---------- App-Store ----------
 
     def ask_install(self, app):
-        self.dialog = {"text": f"{app['name']} installieren?", "app_info": app, "index": 1,
+        self.dialog = {"text": f"{app['name']} installieren?", "index": 1,
                        "buttons": [("Abbrechen", self.close_dialog), ("Installieren", lambda: self.install(app))]}
 
     def install(self, app):
@@ -295,6 +349,15 @@ class Home(AccountsUI, QWidget):
     def ask_uninstall(self, app):
         self.confirm(f"{app['name']} deinstallieren?", "Deinstallieren", lambda: self.uninstall(app))
 
+    def uninstall(self, app):
+        """App von der Startseite entfernen; sie steht danach wieder unter „Verfügbare Apps“."""
+        self.dialog = None
+        hidden = set(self.settings["hidden"]) | {app["id"]}
+        if len(hidden) < len(self.all_apps):
+            self.set("hidden", sorted(hidden))
+            self.refresh_apps()
+            self.refresh_settings_items()
+
     def refresh_settings_items(self):
         """Nach Installieren/Deinstallieren die Liste in den Einstellungen neu aufbauen, Auswahl behalten."""
         if self.view != "settings":
@@ -304,15 +367,6 @@ class Home(AccountsUI, QWidget):
         self.items = self.cats[cat]["items"]
         focusable = [i for i, it in enumerate(self.items) if it["kind"] in FOCUSABLE]
         self.item = min(focusable, key=lambda i: abs(i - item)) if focusable else 0
-
-    def uninstall(self, app):
-        """App von der Startseite entfernen; sie steht danach wieder unter „Verfügbare Apps“."""
-        self.dialog = None
-        hidden = set(self.settings["hidden"]) | {app["id"]}
-        if len(hidden) < len(self.all_apps):
-            self.set("hidden", sorted(hidden))
-            self.refresh_apps()
-            self.refresh_settings_items()
 
     # ---------- Dienste starten ----------
 
@@ -348,24 +402,33 @@ class Home(AccountsUI, QWidget):
                 url = found
         return url
 
+    def show_now(self):
+        """Zustand sofort zeichnen, bevor eine lange Aktion die Oberfläche blockiert."""
+        self.push()
+        QGuiApplication.processEvents()
+
     def run_update(self):
         """Neueste Version von GitHub holen; wenn es eine gibt, RaspiTV damit neu starten."""
         self.dialog = {"text": "Suche nach Updates …", "buttons": [], "index": 0}
-        self.repaint()
+        self.show_now()
         changed, message = cfg.update()
         if not changed:
             self.dialog = {"text": message, "buttons": [("OK", self.close_dialog)], "index": 0}
             return
         self.dialog = {"text": f"{message} – RaspiTV startet neu …", "buttons": [], "index": 0}
-        self.repaint()
+        self.show_now()
         self.player.stop()
         # Prozess durch die neue Version ersetzen (Port 8765 wird dabei freigegeben)
         os.execv(sys.executable, [sys.executable, str(ROOT / "raspitv.py")])
 
+    def activate_window(self):
+        if self.window:
+            self.window.requestActivate()
+
     def go_home(self):
         self.player.stop()
         self.running = self.dialog = None
-        self.activateWindow()
+        self.activate_window()
 
     def close_dialog(self):
         self.dialog = None
@@ -380,16 +443,14 @@ class Home(AccountsUI, QWidget):
         self.confirm(f"{label}?", label, run)
 
     def tick(self):
-        """Sekundentakt: Uhr aktualisieren und merken, wenn der Player beendet wurde."""
+        """Sekundentakt: merken, wenn der Player beendet wurde (die Uhr läuft in QML selbst)."""
         if self.running and not self.player.running():
             app, quick = self.running, time.monotonic() - self.started < 3
             self.running = self.dialog = None
             if quick:
                 self.launch_failed(app)
-            self.activateWindow()
-        # Während ein Video läuft, liegt RaspiTV unsichtbar dahinter: nicht neu zeichnen (spart CPU)
-        if not (self.running and time.monotonic() - self.started > 8):
-            self.update()
+            self.activate_window()
+        self.push()  # u. a. „covered“: Lade-Animation anhalten, sobald der Player vorne liegt
 
     # ---------- Einstellungen ----------
 
@@ -405,12 +466,9 @@ class Home(AccountsUI, QWidget):
 
     def select_cat(self, index):
         """Kategorie wählen: rechts deren Zeilen zeigen, oben beginnen."""
-        if index != self.cat:
-            self.cat_t = 0.0
         self.cat = index
         self.items = self.cats[index]["items"]
         self.item = next((i for i, it in enumerate(self.items) if it["kind"] in FOCUSABLE), 0)
-        self.panel_scroll = 0.0
 
     def set(self, name, value):
         self.settings[name] = value
@@ -448,7 +506,8 @@ class Home(AccountsUI, QWidget):
                  {"kind": "toggle", "label": "Animationen", "value": lambda: s["animations"],
                   "change": lambda step: self.set("animations", not s["animations"])},
              ]},
-            {"label": "Apps", "icon": "apps", "desc": "Installierte Apps löschen – neue gibt es unter „Verfügbare Apps“", "items": apps},
+            {"label": "Apps", "icon": "apps", "desc": "Installierte Apps löschen – neue gibt es unter „Verfügbare Apps“",
+             "items": apps},
             {"label": "Jellyfin", "icon": "server", "desc": "Eigener Mediaserver im Heimnetz",
              "items": [
                  {"kind": "choice", "label": "Server (OK = neu suchen)",
@@ -463,7 +522,7 @@ class Home(AccountsUI, QWidget):
                  {"kind": "action", "label": "Nach Updates suchen", "run": self.run_update},
                  {"kind": "header", "label": "Beenden"},
                  {"kind": "action", "label": "Zurück zum Desktop",
-                  "run": lambda: self.confirm("RaspiTV beenden?", "Zum Desktop", QApplication.quit)},
+                  "run": lambda: self.confirm("RaspiTV beenden?", "Zum Desktop", QGuiApplication.quit)},
                  {"kind": "action", "label": "Neu starten", "run": lambda: self.system("Neu starten", "reboot")},
                  {"kind": "action", "label": "Ausschalten", "run": lambda: self.system("Ausschalten", "poweroff")},
              ]},
@@ -472,6 +531,7 @@ class Home(AccountsUI, QWidget):
                  {"kind": "info", "label": "Version", "value": cfg.version()},
                  {"kind": "info", "label": "IP-Adresse", "value": cfg.ip_address()},
                  {"kind": "info", "label": "Auflösung", "value": f"{self.width()} × {self.height()}"},
+                 {"kind": "info", "label": "Oberfläche", "value": "Qt Quick (Grafikeinheit)"},
              ]},
         ]
 
@@ -506,598 +566,38 @@ class Home(AccountsUI, QWidget):
         elif key == "ok" and item["kind"] != "range":
             item["change"](1)
 
-    def settings_layout(self, u):
-        """Liefert je Zeile (y, Höhe) relativ zum Listenanfang sowie die Gesamthöhe."""
-        rows, y = [], 0.0
-        for i, item in enumerate(self.items):
-            h = (3.4 if item["kind"] == "header" and i else 3.3) * u
-            rows.append((y, h))
-            y += h
-        return rows, y
 
-    # ---------- Animation ----------
+class View(QQuickView):
+    """Vollbild-Fenster mit der QML-Oberfläche; Tasten gehen an die Logik."""
 
-    def step(self):
-        # Zeitbasiert: Animationen dauern gleich lang, egal wie schnell der Pi zeichnet.
-        now = time.monotonic()
-        frames = min(now - self.last_step, 0.1) / 0.016
-        self.last_step = now
-        instant = not self.settings["animations"]
-        moving = False
+    def __init__(self, home):
+        super().__init__()
+        self.home = home
+        self.setTitle("RaspiTV")
+        self.setColor(QColor("#0e1013"))
+        self.setResizeMode(QQuickView.SizeRootObjectToView)
+        self.setCursor(Qt.BlankCursor)
+        self.rootContext().setContextProperty("backend", home)
+        self.setSource(QUrl.fromLocalFile(str(ROOT / "qml" / "Main.qml")))
+        if self.status() == QQuickView.Error:
+            sys.exit("\n".join(e.toString() for e in self.errors()))
 
-        def approach(value, target, speed, eps):
-            nonlocal moving
-            if instant or abs(target - value) <= eps:
-                return target
-            moving = True
-            return value + (target - value) * (1 - (1 - speed) ** frames)
+    def keyPressEvent(self, event):
+        self.home.key_press(event)
 
-        home_focus = self.view == "home" and not self.dialog
-        focus = self.col if home_focus and self.row == APPS else -1
-        for i, s in enumerate(self.scale):
-            self.scale[i] = approach(s, FOCUS_SCALE if i == focus else 1.0, 0.3, 0.001)
-        store_focus = self.store_col if home_focus and self.row == STORE else -1
-        for i, s in enumerate(self.store_scale):
-            self.store_scale[i] = approach(s, FOCUS_SCALE if i == store_focus else 1.0, 0.3, 0.001)
-        self.store_scroll = approach(self.store_scroll, self.scroll_target(self.store, self.store_col), 0.25, 0.5)
-        self.vscroll = approach(self.vscroll, self.row_gap() if self.row == STORE else 0.0, 0.22, 0.5)
-        self.gear = approach(self.gear, 1.0 if home_focus and self.row == HEADER and self.head_col == 1 else 0.0, 0.3, 0.01)
-        self.avatar_f = approach(getattr(self, "avatar_f", 0.0),
-                                 1.0 if home_focus and self.row == HEADER and self.head_col == 0 else 0.0, 0.3, 0.01)
-        self.scroll = approach(self.scroll, self.scroll_target(), 0.25, 0.5)
-        self.hero_t = approach(self.hero_t, 1.0, 0.1, 0.01)
-        self.intro = approach(self.intro, 1.0, 0.06, 0.01)
-        self.panel = approach(self.panel, 1.0 if self.view == "settings" else 0.0, 0.22, 0.005)
-        if self.view == "settings":
-            self.panel_scroll = approach(self.panel_scroll, self.panel_scroll_target(), 0.25, 0.5)
-            self.cat_t = approach(self.cat_t, 1.0, 0.18, 0.01)
-        if self.running and time.monotonic() - self.started < 8:
-            moving = True  # Lade-Kreis drehen, bis der Player das Bild übernimmt
-        if not moving:
-            self.anim.stop()
-        self.update()
-
-    def metrics(self):
-        u = self.width() / 80  # Grundeinheit: 24 px bei 1080p
-        tile_w = 13.5 * u * cfg.TILE_SIZES[self.settings["tile_size"]]
-        return u, 4 * u, tile_w, tile_w * 9 / 16, u
-
-    def row_gap(self):
-        """Abstand zwischen „Deine Apps“ und „Verfügbare Apps“."""
-        u, _, _, tile_h, _ = self.metrics()
-        return tile_h + 5.6 * u
-
-    def scroll_target(self, apps=None, col=None):
-        """Gewählte Kachel mittig halten, ohne über die Ränder hinaus zu scrollen."""
-        apps = self.apps if apps is None else apps
-        col = self.col if col is None else col
-        u, edge, tile_w, _, gap = self.metrics()
-        n = len(apps)
-        total = 2 * edge + n * tile_w + (n - 1) * gap + tile_w * (FOCUS_SCALE - 1)
-        center = edge + col * (tile_w + gap) + tile_w / 2
-        return min(max(center - self.width() / 2, 0), max(total - self.width(), 0))
-
-    def panel_scroll_target(self):
-        u = self.width() / 80
-        rows, total = self.settings_layout(u)
-        if not rows:
-            return 0.0
-        view = self.height() - 12 * u
-        y, h = rows[self.item]
-        return min(max(y + h / 2 - view / 2, 0), max(total - view, 0))
-
-    # ---------- Zeichnen ----------
-
-    def font_px(self, size, weight=QFont.Normal):
-        f = QFont(self.font())
-        f.setPixelSize(max(1, round(size)))
-        f.setWeight(weight)
-        return f
-
-    def brush(self, colors, rect):
-        if len(colors) == 1:
-            return QColor(colors[0])
-        g = QLinearGradient(rect.topLeft(), rect.bottomRight())
-        g.setColorAt(0, QColor(colors[0]))
-        g.setColorAt(1, QColor(colors[1]))
-        return g
-
-    def logo(self, app, variant, max_w, max_h):
-        """Offizielles Logo einer App (logos/<id>.png), passend skaliert; None, wenn keins vorliegt.
-
-        `variant="hero"` bevorzugt logos/<id>_hero.png – eine Fassung für dunkle Hintergründe.
-        """
-        key = (app["id"], variant, round(max_w), round(max_h))
-        if key not in self.logo_cache:
-            source = (app["id"], variant)
-            if source not in self.logo_cache:
-                files = [ROOT / "logos" / f"{app['id']}.png"]
-                if variant == "hero":
-                    files.insert(0, ROOT / "logos" / f"{app['id']}_hero.png")
-                pixmap = next((QPixmap(str(f)) for f in files if f.exists()), QPixmap())
-                if not pixmap.isNull() and app.get("tint"):  # einfarbiges Logo umfärben
-                    painter = QPainter(pixmap)
-                    painter.setCompositionMode(QPainter.CompositionMode_SourceIn)
-                    painter.fillRect(pixmap.rect(), QColor(app["tint"]))
-                    painter.end()
-                self.logo_cache[source] = pixmap
-            pixmap = self.logo_cache[source]
-            self.logo_cache[key] = None if pixmap.isNull() else pixmap.scaled(
-                max(1, round(max_w)), max(1, round(max_h)), Qt.KeepAspectRatio, Qt.SmoothTransformation)
-        return self.logo_cache[key]
-
-    def draw_logo(self, p, app, area, max_w, max_h, variant="tile", shrink=1.0):
-        """Zeichnet das Logo mittig in `area`; gibt False zurück, wenn die App kein Logo hat."""
-        pixmap = self.logo(app, variant, max_w, max_h)
-        if pixmap is None:
-            return False
-        w, h = pixmap.width() * shrink, pixmap.height() * shrink
-        target = QRectF(area.center().x() - w / 2, area.center().y() - h / 2, w, h)
-        p.drawPixmap(target, pixmap, QRectF(pixmap.rect()))
-        return True
-
-    def text(self, p, rect, text, size, color, weight=QFont.Normal, align=Qt.AlignLeft | Qt.AlignVCenter, fit=None):
-        """Zeichnet eine Textzeile; mit `fit` wird die Schrift verkleinert, bis sie in diese Breite passt."""
-        font = self.font_px(size, weight)
-        if fit:
-            width = QFontMetricsF(font).horizontalAdvance(text)
-            if width > fit:
-                font = self.font_px(size * fit / width, weight)
-        p.setFont(font)
-        p.setPen(color)
-        p.drawText(rect, align | Qt.TextSingleLine, text)
-
-    def paintEvent(self, _event):
-        p = QPainter(self)
-        p.setRenderHints(QPainter.Antialiasing | QPainter.TextAntialiasing | QPainter.SmoothPixmapTransform)
-        W, H = self.width(), self.height()
-        u, edge, tile_w, tile_h, gap = self.metrics()
-        p.fillRect(self.rect(), BG)
-        if self.view == "profiles":  # „Wer schaut?“
-            self.paint_profiles(p, W, H, u)
-            if self.menu:
-                self.paint_menu(p, W, H, u)
-            if self.dialog:
-                self.paint_dialog(p, W, H, u)
-            if self.osk:
-                self.paint_osk(p, W, H, u)
-            if self.intro < 1:
-                p.fillRect(self.rect(), alpha("#000000", 1 - ease(self.intro)))
-            return
-
-        if self.panel >= 1:  # Einstellungen verdecken die Startseite ganz
-            self.paint_settings(p, W, H, u)
-            if self.dialog:
-                self.paint_dialog(p, W, H, u)
-            if self.osk:
-                self.paint_osk(p, W, H, u)
-            return
-
-        self.paint_hero_art(p, W, H, u)
-        self.paint_header(p, W, u, edge)
-
-        # Hero-Text und App-Reihen, von unten nach oben verankert; im Store rückt alles nach oben
-        tiles_y = H - 4.4 * u - tile_h - self.vscroll
-        app = self.hero
-        slide = (1 - ease(self.hero_t)) * 1.2 * u  # Text gleitet beim Wechsel leicht herein
-        p.setOpacity(0.35 + 0.65 * ease(self.hero_t))
-        y = tiles_y - 2.9 * u - 2.4 * u - 1.7 * u
-        self.text(p, QRectF(edge + slide, y, W * 0.5, 1.7 * u), app.get("desc", ""), 1.15 * u, SOFT)
-        y -= 0.2 * u + 4.4 * u
-        self.text(p, QRectF(edge + slide, y, W * 0.5, 4.4 * u), app["name"], 3.6 * u, QColor("#ffffff"), QFont.DemiBold)
-        y -= 1.6 * u
-        tag = QFont(self.font_px(0.8 * u, QFont.Bold))
-        tag.setLetterSpacing(QFont.AbsoluteSpacing, 0.14 * u)
-        p.setFont(tag)
-        p.setPen(QColor(app["accent"]).lighter(135))
-        p.drawText(QRectF(edge + slide, y, W * 0.5, 1.6 * u), Qt.AlignLeft | Qt.AlignVCenter, app.get("tag", "App").upper())
-        p.setOpacity(1.0)
-
-        label = "◀ ▶  Kachel verschieben  ·  OK fertig" if self.moving else "Deine Apps"
-        self.text(p, QRectF(edge, tiles_y - 2.9 * u, W, 1.5 * u), label, 1.1 * u, TEXT, QFont.DemiBold)
-        self.tile_rects = self.paint_tiles(p, edge, tiles_y, tile_w, tile_h, gap, u, self.apps, self.scale, self.scroll)
-        if self.moving and self.col < len(self.tile_rects):  # Pfeile über den Nachbarkacheln
-            self.paint_move_arrows(p, self.tile_rects[self.col], u, self.col > 0, self.col < len(self.apps) - 1)
-
-        store_y = tiles_y + self.row_gap()
-        if store_y < H:
-            self.text(p, QRectF(edge, store_y - 2.9 * u, W, 1.5 * u), "Verfügbare Apps", 1.1 * u, TEXT, QFont.DemiBold)
-            if self.row == STORE:
-                self.text(p, QRectF(edge, store_y - 2.9 * u, W - 2 * edge, 1.5 * u), "OK = installieren",
-                          1.0 * u, MUTED, QFont.Normal, Qt.AlignRight | Qt.AlignVCenter)
-            if self.store:
-                self.paint_tiles(p, edge, store_y, tile_w, tile_h, gap, u, self.store, self.store_scale,
-                                 self.store_scroll, store=True)
-            else:
-                self.text(p, QRectF(edge, store_y, W, tile_h / 2), "Alle Apps sind installiert", 1.1 * u, MUTED)
-
-        if self.menu:
-            self.paint_menu(p, W, H, u)
-        if self.panel > 0:
-            self.paint_settings(p, W, H, u)
-        if self.dialog:
-            self.paint_dialog(p, W, H, u)
-        if self.osk:
-            self.paint_osk(p, W, H, u)
-        if self.intro < 1:
-            p.fillRect(self.rect(), alpha("#000000", 1 - ease(self.intro)))
-
-    def paint_hero_art(self, p, W, H, u):
-        """Banner rechts oben, das nach links und unten in den Hintergrund ausläuft."""
-        x = round(W * 0.28)
-        layers = [(self.hero_prev, 1.0), (self.hero, ease(self.hero_t))] if self.hero_t < 1 else [(self.hero, 1.0)]
-        for app, opacity in layers:
-            p.setOpacity(opacity)
-            p.drawPixmap(x, 0, self.hero_pixmap(app, W - x, round(H * 0.7), u))
-        p.setOpacity(1.0)
-        top = QLinearGradient(0, 0, 0, 6 * u)  # Kopfleiste bleibt auf hellen Bannern lesbar
-        top.setColorAt(0, alpha(BG, 0.7))
-        top.setColorAt(1, alpha(BG, 0))
-        p.fillRect(QRectF(0, 0, W, 6 * u), top)
-
-    def hero_pixmap(self, app, w, h, u):
-        """Banner einer App einmal zeichnen und merken – Verläufe sind auf dem Pi sonst zu langsam."""
-        key = (app["id"], w, h)
-        if key in self.art_cache:
-            return self.art_cache[key]
-        pixmap = QPixmap(w, h)
-        p = QPainter(pixmap)
-        p.setRenderHints(QPainter.Antialiasing | QPainter.TextAntialiasing)
-        art = QRectF(0, 0, w, h)
-        p.fillRect(art, self.brush(app.get("hero_bg", app["bg"]), art))
-        glow = QRadialGradient(QPointF(w * 0.62, h * 0.42), w * 0.5)
-        glow.setColorAt(0, alpha(app["accent"], 0.35))
-        glow.setColorAt(1, alpha(app["accent"], 0))
-        p.fillRect(art, glow)
-        mark = QRectF(w * 0.22, 0, w * 0.78, h * 0.86)
-        if not self.draw_logo(p, app, mark, mark.width() * 0.6, h * 0.34, "hero"):
-            self.text(p, mark, app["name"], 7 * u, QColor(app["fg"]), QFont.ExtraBold, Qt.AlignCenter,
-                      fit=mark.width() * 0.8)
-        for start, end in (
-            (art.topLeft(), QPointF(art.x() + art.width() * 0.6, 0)),                    # nach links
-            (art.bottomLeft(), QPointF(art.x(), art.bottom() - art.height() * 0.65)),    # nach unten
-        ):
-            fade = QLinearGradient(start, end)
-            fade.setColorAt(0, BG)
-            fade.setColorAt(0.35, alpha(BG, 0.82))
-            fade.setColorAt(1, alpha(BG, 0))
-            p.fillRect(art, fade)
-        p.end()
-        self.art_cache[key] = pixmap
-        return pixmap
-
-    def paint_header(self, p, W, u, edge):
-        now = QDateTime.currentDateTime()
-        clock = now.toString("HH:mm" if self.settings["clock_24h"] else "h:mm AP")
-        font = self.font_px(1.7 * u, QFont.DemiBold)
-        clock_w = QFontMetricsF(font).horizontalAdvance(clock)
-        y, h = 1.5 * u, 2.6 * u
-        # Konto ganz links; ist es gewählt, erscheint sein Name daneben und schiebt die Uhr weiter
-        a = getattr(self, "avatar_f", 0.0)
-        ac = QPointF(edge + 1.2 * u, y + h / 2)
-        self.paint_avatar(p, ac, (1.2 + 0.15 * a) * u, self.account, a)
-        name_w = QFontMetricsF(self.font_px(1.0 * u, QFont.DemiBold)).horizontalAdvance(self.account["name"]) + 1.2 * u
-        x = ac.x() + 2.4 * u + name_w * ease(a)
-        if a > 0.05:
-            p.setOpacity(a)
-            self.text(p, QRectF(ac.x() + 2.2 * u, y, name_w, h), self.account["name"], 1.0 * u, TEXT, QFont.DemiBold)
-            p.setOpacity(1.0)
-        self.text(p, QRectF(x, y, clock_w + u, h), clock, 1.7 * u, QColor("#ffffff"), QFont.DemiBold)
-        date = QLocale(QLocale.German).toString(now, "dddd, d. MMMM")
-        self.text(p, QRectF(x + clock_w + 0.9 * u, y + 0.1 * u, W / 2, h), date, 1.0 * u, SOFT)
-
-        # Schriftzug in der Mitte, schlicht in Weiß
-        self.text(p, QRectF(0, y, W, h), "RaspiTV", 1.7 * u, QColor("#ffffff"), QFont.ExtraBold, Qt.AlignCenter)
-
-        # Zahnrad: Einstellungen
-        r = (1.3 + 0.15 * self.gear) * u
-        c = QPointF(W - edge - 1.3 * u, y + h / 2)
-        fill = QColor(
-            *(round(a + (b - a) * self.gear) for a, b in zip((255, 255, 255, 36), (232, 234, 237, 255)))
-        )
-        p.setPen(Qt.NoPen)
-        p.setBrush(fill)
-        p.drawEllipse(c, r, r)
-        icon = DARK if self.gear > 0.5 else TEXT
-        p.save()
-        p.translate(c)
-        p.setBrush(icon)
-        g = 0.62 * u
-        for _ in range(8):
-            p.rotate(45)
-            p.drawRoundedRect(QRectF(-0.17 * g, -g, 0.34 * g, 0.5 * g), 0.08 * g, 0.08 * g)
-        p.drawEllipse(QPointF(0, 0), 0.72 * g, 0.72 * g)
-        p.setBrush(fill if self.gear > 0.5 else QColor("#3a3d42"))
-        p.drawEllipse(QPointF(0, 0), 0.32 * g, 0.32 * g)
-        p.restore()
-        if self.gear > 0.05:  # Beschriftung links neben dem Zahnrad
-            p.setOpacity(self.gear)
-            self.text(p, QRectF(c.x() - r - 12.8 * u, y, 12 * u, h), "Einstellungen", 1.0 * u, TEXT,
-                      QFont.DemiBold, Qt.AlignRight | Qt.AlignVCenter)
-            p.setOpacity(1.0)
-
-    def paint_tiles(self, p, edge, y, tile_w, tile_h, gap, u, apps, scales, scroll, store=False):
-        """Kachelreihe: die gewählte Kachel wächst und schiebt ihre Nachbarn zur Seite. Gibt die Kachel-Rechtecke zurück."""
-        x = edge - scroll
-        radius = 0.9 * u
-        rects = []
-        for i, app in enumerate(apps):
-            s = scales[i]
-            w, h = tile_w * s, tile_h * s
-            lift = 1.0 * u if self.moving and not store and i == self.col else 0.0  # verschobene Kachel schwebt
-            rect = QRectF(x, y + (tile_h - h) / 2 - lift, w, h)
-            rects.append(rect)
-            x += w + gap
-            if rect.right() < 0 or rect.left() > self.width() or rect.top() > self.height():
-                continue
-            f = (s - 1) / (FOCUS_SCALE - 1)  # 0 = normal, 1 = gewählt
-            p.setPen(Qt.NoPen)
-            if f > 0.02:  # weicher Farbschein unter der gewählten Kachel
-                p.setBrush(alpha(app["accent"], 0.05 * f))
-                for k in range(1, 7):
-                    d = k * 0.28 * u
-                    p.drawRoundedRect(rect.adjusted(-d, -d + 0.5 * u, d, d + 0.5 * u), radius + d, radius + d)
-            p.setBrush(self.brush(app["bg"], rect))
-            p.drawRoundedRect(rect, radius, radius)
-            sheen = QLinearGradient(rect.topLeft(), rect.bottomLeft())  # leichter Glanz von oben
-            sheen.setColorAt(0, QColor(255, 255, 255, 26))
-            sheen.setColorAt(0.5, QColor(255, 255, 255, 0))
-            p.setBrush(sheen)
-            p.drawRoundedRect(rect, radius, radius)
-            # Logo einmal in Fokusgröße skalieren und beim Zeichnen nur leicht verkleinern
-            box_w, box_h = tile_w * FOCUS_SCALE * 0.66, tile_h * FOCUS_SCALE * 0.5
-            if not self.draw_logo(p, app, rect, box_w, box_h, shrink=s / FOCUS_SCALE):
-                self.text(p, rect, app["name"], 1.55 * u * s * tile_w / (13.5 * u), QColor(app["fg"]),
-                          QFont.ExtraBold, Qt.AlignCenter, fit=rect.width() * 0.8)
-            if store:  # Store-Kachel: gedämpft, mit „+“-Plakette zum Installieren
-                p.setPen(Qt.NoPen)
-                p.setBrush(alpha("#000000", 0.35 * (1 - f)))
-                p.drawRoundedRect(rect, radius, radius)
-                b = 1.0 * u * s
-                badge = QPointF(rect.right() - 1.5 * u * s, rect.top() + 1.5 * u * s)
-                p.setBrush(alpha("#ffffff", 0.85 + 0.15 * f))
-                p.drawEllipse(badge, b, b)
-                p.setPen(QPen(DARK, 0.2 * u * s, Qt.SolidLine, Qt.RoundCap))
-                p.drawLine(QPointF(badge.x() - 0.5 * b, badge.y()), QPointF(badge.x() + 0.5 * b, badge.y()))
-                p.drawLine(QPointF(badge.x(), badge.y() - 0.5 * b), QPointF(badge.x(), badge.y() + 0.5 * b))
-            if f > 0.02:
-                d = 0.28 * u
-                p.setPen(QPen(alpha("#ffffff", f), 0.16 * u))
-                p.setBrush(Qt.NoBrush)
-                p.drawRoundedRect(rect.adjusted(-d, -d, d, d), radius + d, radius + d)
-        return rects
-
-    def paint_move_arrows(self, p, rect, u, left, right):
-        """Pfeile links/rechts an der Kachel, die gerade verschoben wird."""
-        p.setPen(Qt.NoPen)
-        r = 1.3 * u
-        cy = rect.center().y()
-        for show, cx, sign in ((left, rect.left() - 1.9 * u, -1), (right, rect.right() + 1.9 * u, 1)):
-            if not show:
-                continue
-            p.setBrush(QColor("#ffffff"))
-            p.drawEllipse(QPointF(cx, cy), r, r)
-            p.setBrush(DARK)
-            a = 0.45 * u
-            p.drawPolygon(QPolygonF([QPointF(cx + sign * a, cy), QPointF(cx - sign * a * 0.7, cy - a),
-                                     QPointF(cx - sign * a * 0.7, cy + a)]))
-
-    def paint_menu(self, p, W, H, u):
-        """Kachel-Menü über der gewählten Kachel (wie bei Google TV)."""
-        tile = self.menu.get("anchor")
-        if tile is None:
-            if not self.tile_rects or self.col >= len(self.tile_rects):
-                return
-            tile = self.tile_rects[self.col]
-        items = self.menu["items"]
-        p.fillRect(self.rect(), alpha("#000000", 0.45))
-        row_h, pad = 2.8 * u, 0.8 * u
-        width = max(15 * u, tile.width())
-        height = len(items) * row_h + 2 * pad + 2.6 * u
-        x = min(max(tile.center().x() - width / 2, 1.5 * u), W - width - 1.5 * u)
-        box = QRectF(x, tile.top() - height - 1.2 * u, width, height)
-        if box.top() < 5 * u:  # oben kein Platz (z. B. „Wer schaut?“): unter dem Element zeigen
-            box.moveTop(tile.bottom() + 4.2 * u)
-        p.setPen(Qt.NoPen)
-        p.setBrush(CARD)
-        p.drawRoundedRect(box, 1.2 * u, 1.2 * u)
-        self.text(p, QRectF(box.x() + 1.4 * u, box.y() + pad, width - 2.8 * u, 2.2 * u),
-                  self.menu.get("title", ""), 1.0 * u, MUTED, QFont.DemiBold)
-        y = box.y() + pad + 2.6 * u
-        for i, (label, _) in enumerate(items):
-            r = QRectF(box.x() + pad, y, width - 2 * pad, row_h - 0.3 * u)
-            focused = i == self.menu["index"]
-            if focused:
-                p.setPen(Qt.NoPen)
-                p.setBrush(TEXT)
-                p.drawRoundedRect(r, r.height() / 2, r.height() / 2)
-            self.text(p, r.adjusted(1.2 * u, 0, 0, 0), label, 1.1 * u, DARK if focused else TEXT, QFont.DemiBold)
-            y += row_h
-
-    def pill(self, p, rect, label, size, focused):
-        p.setPen(Qt.NoPen)
-        p.setBrush(TEXT if focused else QColor(255, 255, 255, 31))
-        p.drawRoundedRect(rect, rect.height() / 2, rect.height() / 2)
-        self.text(p, rect, label, size, DARK if focused else TEXT, QFont.DemiBold, Qt.AlignCenter)
-
-    def paint_settings(self, p, W, H, u):
-        """Eigene Vollbild-Seite: links Kategorien, rechts die Einstellungen der gewählten Kategorie."""
-        t = ease(self.panel)
-        p.save()
-        p.setOpacity(t)
-        p.translate(0, (1 - t) * 2 * u)  # gleitet beim Öffnen leicht von unten herein
-        p.fillRect(QRectF(0, -2 * u, W, H + 4 * u), BG)
-        active = not self.dialog and not self.osk
-
-        # Kategorien-Leiste
-        side_w = 26 * u
-        p.fillRect(QRectF(0, -2 * u, side_w, H + 4 * u), QColor("#15171b"))
-        self.text(p, QRectF(3 * u, 2.6 * u, side_w, 3.4 * u), "Einstellungen", 2.1 * u, QColor("#ffffff"), QFont.DemiBold)
-        y = 9 * u
-        for i, cat in enumerate(self.cats):
-            row = QRectF(1.6 * u, y, side_w - 3.2 * u, 3.4 * u)
-            selected = i == self.cat
-            focused = selected and self.pane == "cats" and active
-            if focused:
-                p.setPen(Qt.NoPen)
-                p.setBrush(TEXT)
-                p.drawRoundedRect(row, row.height() / 2, row.height() / 2)
-            elif selected:
-                p.setPen(Qt.NoPen)
-                p.setBrush(QColor(255, 255, 255, 26))
-                p.drawRoundedRect(row, row.height() / 2, row.height() / 2)
-            color = DARK if focused else (QColor("#ffffff") if selected else SOFT)
-            self.paint_icon(p, cat["icon"], QPointF(row.x() + 2.2 * u, row.center().y()), 1.5 * u, color)
-            self.text(p, row.adjusted(4.2 * u, 0, -1 * u, 0), cat["label"], 1.2 * u, color,
-                      QFont.DemiBold if selected else QFont.Normal)
-            y += 3.8 * u
-        self.text(p, QRectF(3 * u, H - 3.4 * u, side_w - 4 * u, 1.6 * u), f"RaspiTV · {self.account['name']}",
-                  0.9 * u, MUTED)
-
-        if not self.cats:
-            p.restore()
-            return
-        # Inhalt der Kategorie
-        cat = self.cats[self.cat]
-        slide = (1 - ease(self.cat_t)) * 1.5 * u
-        x = side_w + 5 * u + slide
-        width = min(W - x - 6 * u, 50 * u)
-        p.setOpacity(t * (0.25 + 0.75 * ease(self.cat_t)))
-        self.text(p, QRectF(x, 2.4 * u, width, 3.6 * u), cat["label"], 2.6 * u, QColor("#ffffff"), QFont.DemiBold)
-        self.text(p, QRectF(x, 6.0 * u, width, 1.8 * u), cat["desc"], 1.1 * u, MUTED)
-
-        top = 10 * u
-        p.setClipRect(QRectF(x - 1.5 * u, top, width + 3 * u, H - top - 1.5 * u))
-        rows, _ = self.settings_layout(u)
-        in_items = self.pane == "items" and active
-        for i, (item, (ry, h)) in enumerate(zip(self.items, rows)):
-            y = top + ry - self.panel_scroll
-            if y + h < top or y > H:
-                continue
-            if item["kind"] == "header":
-                head = QFont(self.font_px(0.8 * u, QFont.Bold))
-                head.setLetterSpacing(QFont.AbsoluteSpacing, 0.12 * u)
-                p.setFont(head)
-                p.setPen(MUTED)
-                p.drawText(QRectF(x + 1.3 * u, y, width, h - 0.6 * u), Qt.AlignLeft | Qt.AlignBottom, item["label"].upper())
-                continue
-            focused = in_items and i == self.item
-            row = QRectF(x - 1.3 * u, y + 0.2 * u, width + 2.6 * u, h - 0.4 * u)
-            p.setPen(Qt.NoPen)
-            p.setBrush(TEXT if focused else QColor(255, 255, 255, 12))
-            p.drawRoundedRect(row, 0.9 * u, 0.9 * u)
-            inner = row.adjusted(1.5 * u, 0, -1.5 * u, 0)
-            self.text(p, inner, item["label"], 1.15 * u, DARK if focused else TEXT,
-                      QFont.DemiBold if focused else QFont.Normal)
-            kind = item["kind"]
-            if kind == "toggle":
-                self.paint_switch(p, inner, item["value"](), focused, u)
-            elif kind in ("choice", "range"):
-                value = f"‹  {item['value']()}  ›" if focused else item["value"]()
-                self.text(p, inner, value, 1.05 * u, DARK if focused else MUTED, QFont.Normal, Qt.AlignRight | Qt.AlignVCenter)
-            elif kind == "action" and "hint" in item:
-                if item["hint"]:
-                    self.text(p, inner, item["hint"], 1.05 * u, DARK if focused else MUTED, QFont.Normal,
-                              Qt.AlignRight | Qt.AlignVCenter)
-            elif kind == "action":
-                self.text(p, inner, "›", 1.5 * u, DARK if focused else MUTED, QFont.Normal, Qt.AlignRight | Qt.AlignVCenter)
-            elif kind == "info":
-                self.text(p, inner, item["value"], 1.05 * u, MUTED, QFont.Normal, Qt.AlignRight | Qt.AlignVCenter)
-        p.restore()
-
-    def paint_icon(self, p, name, c, s, color):
-        """Kleine Strich-Symbole für die Kategorien (Mittelpunkt `c`, Größe `s`)."""
-        p.save()
-        p.setPen(QPen(color, 0.11 * s, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
-        p.setBrush(Qt.NoBrush)
-        x, y, r = c.x(), c.y(), s / 2
-        if name == "account":
-            p.drawEllipse(QPointF(x, y - 0.32 * r), 0.36 * r, 0.36 * r)
-            p.drawArc(QRectF(x - 0.75 * r, y + 0.15 * r, 1.5 * r, 1.4 * r), 0, 180 * 16)
-        elif name == "display":
-            p.drawRoundedRect(QRectF(x - r, y - 0.7 * r, 2 * r, 1.25 * r), 0.15 * r, 0.15 * r)
-            p.drawLine(QPointF(x - 0.45 * r, y + 0.85 * r), QPointF(x + 0.45 * r, y + 0.85 * r))
-        elif name == "apps":
-            for dx in (-1, 1):
-                for dy in (-1, 1):
-                    p.drawRoundedRect(QRectF(x + dx * 0.5 * r - 0.36 * r, y + dy * 0.5 * r - 0.36 * r, 0.72 * r, 0.72 * r),
-                                      0.15 * r, 0.15 * r)
-        elif name == "server":
-            for dy in (-0.45, 0.45):
-                box = QRectF(x - 0.9 * r, y + dy * r - 0.38 * r, 1.8 * r, 0.76 * r)
-                p.drawRoundedRect(box, 0.15 * r, 0.15 * r)
-                p.drawPoint(QPointF(box.right() - 0.35 * r, box.center().y()))
-        elif name == "sound":
-            p.drawPolygon(QPolygonF([QPointF(x - 0.9 * r, y - 0.3 * r), QPointF(x - 0.5 * r, y - 0.3 * r),
-                                     QPointF(x - 0.05 * r, y - 0.75 * r), QPointF(x - 0.05 * r, y + 0.75 * r),
-                                     QPointF(x - 0.5 * r, y + 0.3 * r), QPointF(x - 0.9 * r, y + 0.3 * r)]))
-            p.drawArc(QRectF(x - 0.25 * r, y - 0.45 * r, 0.9 * r, 0.9 * r), -50 * 16, 100 * 16)
-            p.drawArc(QRectF(x - 0.55 * r, y - 0.85 * r, 1.6 * r, 1.7 * r), -50 * 16, 100 * 16)
-        elif name == "power":
-            p.drawArc(QRectF(x - 0.8 * r, y - 0.7 * r, 1.6 * r, 1.6 * r), 120 * 16, 300 * 16)
-            p.drawLine(QPointF(x, y - 0.95 * r), QPointF(x, y - 0.1 * r))
-        elif name == "info":
-            p.drawEllipse(c, 0.9 * r, 0.9 * r)
-            p.drawLine(QPointF(x, y - 0.05 * r), QPointF(x, y + 0.45 * r))
-            p.drawPoint(QPointF(x, y - 0.42 * r))
-        p.restore()
-
-    def paint_switch(self, p, inner, on, focused, u):
-        w, h = 2.5 * u, 1.3 * u
-        track = QRectF(inner.right() - w, inner.center().y() - h / 2, w, h)
-        p.setPen(Qt.NoPen)
-        if on:
-            p.setBrush(QColor("#1a73e8") if focused else BLUE)
-        else:
-            p.setBrush(QColor("#9aa0a6") if focused else QColor("#4a4d52"))
-        p.drawRoundedRect(track, h / 2, h / 2)
-        knob = track.right() - h / 2 if on else track.left() + h / 2
-        p.setBrush(QColor("#ffffff") if on or focused else QColor("#c4c7cc"))
-        p.drawEllipse(QPointF(knob, track.center().y()), h * 0.36, h * 0.36)
-
-    def paint_dialog(self, p, W, H, u):
-        buttons = self.dialog["buttons"]
-        app = self.dialog.get("app")
-        if app:  # Startbildschirm eines Dienstes
-            p.fillRect(self.rect(), self.brush(app.get("hero_bg", app["bg"]), QRectF(self.rect())))
-            p.fillRect(self.rect(), alpha("#000000", 0.3))
-            mark = QRectF(0, H / 2 - 7 * u, W, 8 * u)
-            if not self.draw_logo(p, app, mark, W * 0.3, 7 * u, "hero"):
-                self.text(p, mark, app["name"], 6 * u, QColor(app["fg"]), QFont.ExtraBold, Qt.AlignCenter, fit=W * 0.6)
-            self.text(p, QRectF(0, H / 2 + 5.2 * u, W, 2 * u), self.dialog["text"], 1.1 * u, SOFT, QFont.Normal, Qt.AlignCenter)
-            p.setPen(QPen(QColor("#ffffff"), 0.22 * u, Qt.SolidLine, Qt.RoundCap))
-            p.setBrush(Qt.NoBrush)
-            spin = QRectF(W / 2 - 1.1 * u, H / 2 + 2.2 * u, 2.2 * u, 2.2 * u)
-            p.drawArc(spin, int(-time.monotonic() * 300 * 16) % (360 * 16), 270 * 16)
-            return
-
-        p.fillRect(self.rect(), alpha("#000000", 0.7))
-        size = 1.1
-        font = self.font_px(size * u, QFont.DemiBold)
-        widths = [QFontMetricsF(font).horizontalAdvance(label) + 3.2 * u for label, _ in buttons]
-        gap = 0.8 * u
-        row_w = sum(widths) + gap * max(len(buttons) - 1, 0)
-        title_w = QFontMetricsF(self.font_px(1.7 * u, QFont.DemiBold)).horizontalAdvance(self.dialog["text"])
-        card_w = max(row_w, title_w, 18 * u) + 6 * u
-        card_h = (11.5 if buttons else 7) * u
-        card = QRectF((W - card_w) / 2, (H - card_h) / 2, card_w, card_h)
-        p.setPen(Qt.NoPen)
-        p.setBrush(CARD)
-        p.drawRoundedRect(card, 1.6 * u, 1.6 * u)
-        title = QRectF(card.x(), card.y() + (2.4 if buttons else 2) * u, card_w, 3 * u)
-        self.text(p, title, self.dialog["text"], 1.7 * u, QColor("#ffffff"), QFont.DemiBold, Qt.AlignCenter)
-        x = (W - row_w) / 2
-        for i, (label, _) in enumerate(buttons):
-            self.pill(p, QRectF(x, card.bottom() - 5 * u, widths[i], 2.6 * u), label, size * u, i == self.dialog["index"])
-            x += widths[i] + gap
+    def keyReleaseEvent(self, event):
+        self.home.key_release(event)
 
 
 def main():
     apps = json.loads((ROOT / "apps.json").read_text(encoding="utf-8"))
-    app = QApplication(sys.argv)
+    QGuiApplication.setAttribute(Qt.AA_UseOpenGLES)
+    app = QGuiApplication(sys.argv)
     app.setFont(QFont("Nunito Sans"))  # Systemschrift von Raspberry Pi OS; sonst Qt-Ersatzschrift
     player = Player()
     home = Home(apps, player)
+    view = View(home)
+    home.window = view
 
     def on_key(key):
         if key == "home":
@@ -1114,7 +614,8 @@ def main():
     signal.signal(signal.SIGTERM, lambda *_: app.quit())
     signal.signal(signal.SIGINT, lambda *_: app.quit())
     signal.signal(signal.SIGHUP, lambda *_: app.quit())  # Terminal wurde geschlossen
-    home.showFullScreen()
+    QTimer(app, interval=200, timeout=lambda: None).start()  # Python-Signale auch während Qt läuft annehmen
+    view.showFullScreen()
     sys.exit(app.exec_())
 
 

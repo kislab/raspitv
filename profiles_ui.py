@@ -1,18 +1,9 @@
 """Konten in der Oberfläche: „Wer schaut?“, Kontowechsel, Konten anlegen/ändern, PIN und
-Bildschirmtastatur. Wird als Mixin von raspitv.Home benutzt (braucht dessen Zeichen-Helfer)."""
-import time
-
-from PyQt5.QtCore import QPointF, QRectF, Qt
-from PyQt5.QtGui import QColor, QFont, QPen
+Bildschirmtastatur. Wird als Mixin von raspitv.Home benutzt; gezeichnet wird in qml/."""
+from PyQt5.QtCore import Qt
 
 import accounts
 import settings as cfg
-
-TEXT = QColor("#e8eaed")
-MUTED = QColor("#9aa0a6")
-DARK = QColor("#202124")
-CARD = QColor("#22252b")
-BG = QColor("#0e1013")
 
 PIN_LEN = 4
 TEXT_KEYS = [list("ABCDEFGHIJ"), list("KLMNOPQRST"), list("UVWXYZÄÖÜß"), list("1234567890-"),
@@ -30,7 +21,6 @@ class AccountsUI:
         self.osk = None      # Bildschirmtastatur: {"title", "value", "mode", "row", "col", "done", "error"}
         self.prof = 0        # gewähltes Konto in „Wer schaut?“
         self.head_col = 1    # Kopfzeile: 0 = Konto, 1 = Einstellungen
-        self.profile_rects = {}
         self.settings = cfg.load(accounts.settings_file(last))
         # Mehrere Konten oder eine PIN: beim Start fragen, wer schaut
         self.start_view = "profiles" if len(self.acc_data["accounts"]) > 1 or last.get("pin") else "home"
@@ -86,7 +76,6 @@ class AccountsUI:
         self.col = 0
         self.row = 1
         self.refresh_apps()
-        self.hero = self.hero_prev = self.apps[0]
         self.view = "home"
 
     def with_pin(self, account, action, title=None):
@@ -125,7 +114,8 @@ class AccountsUI:
             items.append(("PIN entfernen", lambda: self.with_pin(account, lambda: self.remove_pin(account))))
         if len(self.acc_data["accounts"]) > 1:
             items.append(("Konto löschen", lambda: self.with_pin(account, lambda: self.ask_delete(account))))
-        self.menu = {"items": items, "index": 0, "title": account["name"], "anchor": self.profile_rects.get(account["id"])}
+        self.menu = {"items": items, "index": 0, "title": account["name"], "anchor": "profile",
+                     "at": self.acc_data["accounts"].index(account)}
 
     def rename_account(self, account):
         def done(name):
@@ -228,110 +218,4 @@ class AccountsUI:
                 self.osk["error"] = ""
         else:
             return False
-        self.update()
         return True
-
-    # ---------- Zeichnen ----------
-
-    def paint_avatar(self, p, center, r, account, focus=0.0):
-        p.setPen(Qt.NoPen)
-        if focus > 0.02:
-            p.setBrush(QColor(255, 255, 255, round(255 * focus)))
-            p.drawEllipse(center, r + 0.3 * self.width() / 80 * focus, r + 0.3 * self.width() / 80 * focus)
-        p.setBrush(QColor(account["color"]))
-        p.drawEllipse(center, r, r)
-        self.text(p, QRectF(center.x() - r, center.y() - r, 2 * r, 2 * r), account["name"][:1].upper(),
-                  r * 1.05, QColor("#ffffff"), QFont.Bold, Qt.AlignCenter)
-
-    def paint_profiles(self, p, W, H, u):
-        p.fillRect(self.rect(), BG)
-        self.text(p, QRectF(0, 1.5 * u, W, 2.6 * u), "RaspiTV", 1.7 * u, QColor("#ffffff"), QFont.ExtraBold, Qt.AlignCenter)
-        self.text(p, QRectF(0, H * 0.24, W, 4 * u), "Wer schaut?", 2.8 * u, QColor("#ffffff"), QFont.DemiBold, Qt.AlignCenter)
-        entries = self.profile_entries()
-        r, gap = 4.2 * u, 4.5 * u
-        total = len(entries) * 2 * r + (len(entries) - 1) * gap
-        x = (W - total) / 2 + r
-        cy = H * 0.5
-        self.profile_rects = {}
-        for i, account in enumerate(entries):
-            focused = i == self.prof and not self.osk and not self.menu and not self.dialog
-            rr = r * (1.12 if focused else 1.0)
-            c = QPointF(x, cy)
-            if account is None:  # Konto hinzufügen
-                p.setPen(QPen(TEXT if focused else MUTED, 0.2 * u, Qt.DashLine if not focused else Qt.SolidLine))
-                p.setBrush(QColor(255, 255, 255, 40 if focused else 12))
-                p.drawEllipse(c, rr, rr)
-                p.setPen(QPen(TEXT, 0.3 * u, Qt.SolidLine, Qt.RoundCap))
-                p.drawLine(QPointF(x - 1.2 * u, cy), QPointF(x + 1.2 * u, cy))
-                p.drawLine(QPointF(x, cy - 1.2 * u), QPointF(x, cy + 1.2 * u))
-                label = "Konto hinzufügen"
-            else:
-                self.paint_avatar(p, c, rr, account, 1.0 if focused else 0.0)
-                self.profile_rects[account["id"]] = QRectF(x - r, cy - r, 2 * r, 2 * r)
-                label = account["name"]
-                if account.get("pin"):  # Schloss
-                    lc = QPointF(x + rr * 0.72, cy + rr * 0.72)
-                    p.setPen(Qt.NoPen)
-                    p.setBrush(QColor("#ffffff"))
-                    p.drawEllipse(lc, 0.95 * u, 0.95 * u)
-                    p.setBrush(DARK)
-                    p.drawRoundedRect(QRectF(lc.x() - 0.45 * u, lc.y() - 0.1 * u, 0.9 * u, 0.65 * u), 0.1 * u, 0.1 * u)
-                    p.setPen(QPen(DARK, 0.16 * u))
-                    p.setBrush(Qt.NoBrush)
-                    p.drawArc(QRectF(lc.x() - 0.3 * u, lc.y() - 0.55 * u, 0.6 * u, 0.7 * u), 0, 180 * 16)
-            self.text(p, QRectF(x - r - 2 * u, cy + r + 1.4 * u, 2 * r + 4 * u, 2 * u), label, 1.15 * u,
-                      QColor("#ffffff") if focused else MUTED, QFont.DemiBold if focused else QFont.Normal, Qt.AlignCenter)
-            x += 2 * r + gap
-        hint = "OK lange drücken: Konto bearbeiten"
-        self.text(p, QRectF(0, H - 4 * u, W, 2 * u), hint, 0.95 * u, MUTED, QFont.Normal, Qt.AlignCenter)
-
-    def paint_osk(self, p, W, H, u):
-        o = self.osk
-        p.fillRect(self.rect(), QColor(0, 0, 0, 200))
-        rows = self.osk_rows()
-        pin = o["mode"] == "pin"
-        key_w, key_h, gap = (5.2 if pin else 3.6) * u, 3.0 * u, 0.5 * u
-        widths = [[(key_w * (3.2 if len(k) > 1 and not pin else 1)) for k in row] for row in rows]
-        row_ws = [sum(w) + gap * (len(w) - 1) for w in widths]
-        card_w = max(max(row_ws) + 6 * u, 40 * u)
-        card_h = 12 * u + len(rows) * (key_h + gap)
-        card = QRectF((W - card_w) / 2, (H - card_h) / 2, card_w, card_h)
-        p.setPen(Qt.NoPen)
-        p.setBrush(CARD)
-        p.drawRoundedRect(card, 1.6 * u, 1.6 * u)
-        self.text(p, QRectF(card.x(), card.y() + 1.6 * u, card_w, 2.4 * u), o["title"], 1.5 * u, QColor("#ffffff"), QFont.DemiBold, Qt.AlignCenter)
-
-        field = QRectF(card.x() + 3 * u, card.y() + 4.6 * u, card_w - 6 * u, 3 * u)
-        if pin:  # vier Felder mit Punkten
-            box, bgap = 3 * u, 1.2 * u
-            bx = W / 2 - (PIN_LEN * box + (PIN_LEN - 1) * bgap) / 2
-            for i in range(PIN_LEN):
-                rect = QRectF(bx + i * (box + bgap), field.y(), box, box)
-                p.setPen(QPen(TEXT if i == len(o["value"]) else QColor(255, 255, 255, 60), 0.15 * u))
-                p.setBrush(QColor(255, 255, 255, 18))
-                p.drawRoundedRect(rect, 0.5 * u, 0.5 * u)
-                if i < len(o["value"]):
-                    p.setPen(Qt.NoPen)
-                    p.setBrush(TEXT)
-                    p.drawEllipse(rect.center(), 0.5 * u, 0.5 * u)
-        else:
-            p.setPen(Qt.NoPen)
-            p.setBrush(QColor(255, 255, 255, 22))
-            p.drawRoundedRect(field, 0.6 * u, 0.6 * u)
-            cursor = "|" if int(time.monotonic()) % 2 == 0 else " "  # blinkt im Sekundentakt
-            self.text(p, field.adjusted(1.2 * u, 0, -1.2 * u, 0), o["value"] + cursor, 1.4 * u, QColor("#ffffff"))
-        if o["error"]:
-            self.text(p, QRectF(card.x(), field.bottom() + 0.3 * u, card_w, 1.8 * u), o["error"], 1.0 * u, QColor("#f28b82"), QFont.Normal, Qt.AlignCenter)
-
-        y = card.y() + 10 * u
-        for r, row in enumerate(rows):
-            x = (W - row_ws[r]) / 2
-            for c, label in enumerate(row):
-                rect = QRectF(x, y, widths[r][c], key_h)
-                focused = r == o["row"] and c == o["col"]
-                p.setPen(Qt.NoPen)
-                p.setBrush(TEXT if focused else QColor(255, 255, 255, 26))
-                p.drawRoundedRect(rect, 0.6 * u, 0.6 * u)
-                self.text(p, rect, label, 1.2 * u, DARK if focused else TEXT, QFont.DemiBold, Qt.AlignCenter)
-                x += widths[r][c] + gap
-            y += key_h + gap
