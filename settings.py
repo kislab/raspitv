@@ -22,21 +22,50 @@ DEFAULTS = {
 }
 
 
-def load():
-    settings = dict(DEFAULTS)
+# Diese Einstellungen gehören dem jeweiligen Konto, alle anderen gelten für das ganze Gerät
+ACCOUNT_KEYS = ("tile_size", "clock_24h", "animations", "hidden", "order")
+
+
+def _read(path):
     try:
-        stored = json.loads(FILE.read_text(encoding="utf-8"))
-        settings.update({k: v for k, v in stored.items() if k in DEFAULTS})
-    except (OSError, ValueError, AttributeError):
-        pass
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def load(account_file=None):
+    """Einstellungen laden; mit `account_file` die des Kontos über die des Geräts legen.
+
+    Hat ein Konto noch keine eigene Datei, übernimmt es die bisherigen Geräte-Einstellungen.
+    """
+    settings = dict(DEFAULTS)
+    stored = _read(FILE)
+    settings.update({k: v for k, v in stored.items() if k in DEFAULTS})
+    if account_file is not None and Path(account_file).exists():
+        own = _read(account_file)
+        settings.update({k: own[k] for k in ACCOUNT_KEYS if k in own})
     if settings["tile_size"] not in TILE_SIZES:
         settings["tile_size"] = DEFAULTS["tile_size"]
     return settings
 
 
-def save(settings):
-    FILE.parent.mkdir(parents=True, exist_ok=True)
-    FILE.write_text(json.dumps(settings, indent=2, ensure_ascii=False), encoding="utf-8")
+def defaults_for_new_account():
+    return {k: DEFAULTS[k] for k in ACCOUNT_KEYS}
+
+
+def save(settings, account_file=None):
+    def write(path, data):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+
+    if account_file is None:
+        write(FILE, settings)
+        return
+    device = _read(FILE)
+    device.update({k: v for k, v in settings.items() if k not in ACCOUNT_KEYS})
+    write(FILE, device)
+    write(Path(account_file), {k: settings[k] for k in ACCOUNT_KEYS})
 
 
 # ---------- Autostart ----------

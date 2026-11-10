@@ -81,17 +81,19 @@ class Player:
                 self.proc = self.app_id = None
             return self.app_id
 
-    def launch(self, app, width, height):
+    def launch(self, app, width, height, profile=None):
+        """Startet einen Dienst im Browser-Profil `profile` (je RaspiTV-Konto eigene Logins)."""
         self.stop()
+        profile = Path(profile or DATA / "player")
         # Verwaiste Player (z. B. nach einem Absturz) würden den Start an sich reißen:
         # Chromium übergibt die Adresse dann an den alten Prozess und beendet sich sofort.
-        subprocess.run(["pkill", "-f", "--", f"--user-data-dir={DATA / 'player'}"])
+        subprocess.run(["pkill", "-f", "--", f"--user-data-dir={DATA}/"])
         env = gui_env()
         cmd = [
             # Direkt starten statt über /usr/bin/chromium: das Startskript von Raspberry Pi OS
             # setzt u. a. --force-renderer-accessibility, das bei Netflix spürbar Leistung kostet.
             CHROMIUM if os.path.exists(CHROMIUM) else "chromium",
-            f"--user-data-dir={DATA / 'player'}",
+            f"--user-data-dir={profile}",
             *PERFORMANCE_FLAGS,
             "--kiosk", "--window-position=0,0", f"--window-size={width},{height}",
             "--no-first-run", "--noerrdialogs",
@@ -114,7 +116,7 @@ class Player:
             cmd.append(f"--user-agent={USER_AGENTS[app['ua']]}")
         cmd.append(app["url"])
         DATA.mkdir(parents=True, exist_ok=True)
-        disable_translate(DATA / "player" / "Default" / "Preferences")
+        disable_translate(profile / "Default" / "Preferences")
         # Im Entwicklungsmodus Chromium-Ausgaben (u. a. des Widevine-Zwischensteckers) mitschreiben
         log = open(DATA / "player.log", "wb") if os.environ.get("RASPITV_DEBUG") else subprocess.DEVNULL
         with self.lock:

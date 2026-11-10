@@ -8,6 +8,9 @@ Mediacenter für den Raspberry Pi 4 im Stil von Google TV – bedienbar mit der 
   die Netflix, Disney+ und Prime Video wie die jeweilige TV-App aussehen lässt.
 - **Jellyfin**: der Server im Heimnetz wird automatisch gefunden (Einstellungen → Jellyfin).
   Anmelden ohne Tastatur: „Quick Connect verwenden“ wählen und den Code in der Jellyfin-App am Handy bestätigen.
+- **Konten**: „Wer schaut?“ wie bei Google TV. Jedes Konto hat eigene Logins bei Netflix, Disney+,
+  YouTube, Prime Video & Co. (eigenes Browser-Profil), eigene Kachel-Reihenfolge und optional eine PIN.
+  Wechseln: Konto-Symbol oben rechts; bearbeiten: OK auf einem Konto lange drücken.
 - **Kacheln anordnen**: OK lange gedrückt halten → Menü mit Öffnen, Verschieben, Ausblenden.
 - **Fernbedienung**: HTTP-Schnittstelle auf `127.0.0.1:8765` (`POST /key {"key": "up"}`, `"menu"` = langes OK, `GET /status`).
 

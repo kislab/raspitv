@@ -24,6 +24,7 @@ from PyQt5.QtWidgets import QApplication, QWidget
 
 import remote
 import settings as cfg
+from profiles_ui import AccountsUI
 
 ROOT = Path(__file__).resolve().parent
 BG = QColor("#0e1013")
@@ -57,17 +58,17 @@ def alpha(color, a):
     return c
 
 
-class Home(QWidget):
+class Home(AccountsUI, QWidget):
     key = pyqtSignal(str)  # auch aus dem Fernbedienungs-Thread auslösbar
 
     def __init__(self, apps, player):
         super().__init__()
         self.all_apps = apps
         self.player = player
-        self.settings = cfg.load()
+        self.init_accounts()           # Konto (eigene Logins und Einstellungen) und dessen Einstellungen
         self.row = APPS
         self.col = 0                   # gewählte App
-        self.view = "home"             # "home" | "settings"
+        self.view = self.start_view    # "home" | "settings" | "profiles" („Wer schaut?“)
         self.items, self.item = [], 0  # Einstellungs-Zeilen und gewählte Zeile
         self.volume = None
         self.dialog = None             # {"text", "buttons": [(label, fn)], "index"}
@@ -114,6 +115,8 @@ class Home(QWidget):
     # ---------- Eingabe ----------
 
     def keyPressEvent(self, event):
+        if self.osk_type(event):  # echte Tastatur tippt in die Bildschirmtastatur
+            return
         key = KEYMAP.get(event.key())
         if key == "ok" and self.long_press_possible():
             if not event.isAutoRepeat() and self.ok_down is None:
@@ -131,8 +134,8 @@ class Home(QWidget):
 
     def long_press_possible(self):
         """Langes Drücken gibt es nur auf einer Kachel der Startseite."""
-        return (not self.running and not self.dialog and not self.menu and not self.moving
-                and self.view == "home" and self.row == APPS)
+        return (not self.running and not self.dialog and not self.menu and not self.moving and not self.osk
+                and (self.view == "home" and self.row == APPS or self.view == "profiles"))
 
     def check_long_press(self):
         if self.ok_down is not None and time.monotonic() - self.ok_down >= LONG_PRESS - 0.05:
@@ -145,10 +148,14 @@ class Home(QWidget):
                 self.go_home()
         elif self.dialog:
             self.dialog_key(key)
+        elif self.osk:
+            self.osk_key(key)
         elif self.menu:
             self.menu_key(key)
         elif self.moving:
             self.move_key(key)
+        elif self.view == "profiles":
+            self.profiles_key(key)
         elif key == "menu":
             if self.view == "home" and self.row == APPS:
                 self.open_menu()
@@ -157,6 +164,8 @@ class Home(QWidget):
         elif key in ("left", "right") and self.row == APPS:
             step = -1 if key == "left" else 1
             self.col = min(max(self.col + step, 0), len(self.apps) - 1)
+        elif key in ("left", "right"):  # Kopfzeile: Konto | Einstellungen
+            self.head_col = 0 if key == "left" else 1
         elif key == "up":
             self.row = HEADER
         elif key == "down":
@@ -164,6 +173,8 @@ class Home(QWidget):
         elif key == "ok":
             if self.row == APPS:
                 self.launch(self.apps[self.col])
+            elif self.head_col == 0:
+                self.open_profiles()
             else:
                 self.open_settings()
 
@@ -191,7 +202,7 @@ class Home(QWidget):
         items = [("Öffnen", lambda: self.launch(app)), ("Verschieben", self.start_moving)]
         if len(self.apps) > 1:
             items.append(("Ausblenden", lambda: self.hide_app(app)))
-        self.menu = {"items": items, "index": 0}
+        self.menu = {"items": items, "index": 0, "title": app["name"]}
 
     def menu_key(self, key):
         items = self.menu["items"]
@@ -247,7 +258,7 @@ class Home(QWidget):
             app = dict(app, url=url)
         self.dialog = {"text": "wird gestartet …", "buttons": [], "index": 0, "app": app}
         try:
-            self.player.launch(app, self.width(), self.height())
+            self.player.launch(app, self.width(), self.height(), self.profile_path())
         except OSError:
             return self.launch_failed(app)
         self.running, self.started = app, time.monotonic()
@@ -324,7 +335,7 @@ class Home(QWidget):
 
     def set(self, name, value):
         self.settings[name] = value
-        cfg.save(self.settings)
+        self.save_settings()
 
     def build_items(self):
         s = self.settings
@@ -344,6 +355,8 @@ class Home(QWidget):
             self.volume = cfg.get_volume()
 
         items = [
+            {"kind": "header", "label": "Konto"},
+            {"kind": "action", "label": f"Konto wechseln ({self.account['name']})", "run": self.open_profiles},
             {"kind": "header", "label": "Darstellung"},
             {"kind": "choice", "label": "Kachelgröße", "value": lambda: s["tile_size"].capitalize(), "change": cycle_size},
             {"kind": "choice", "label": "Uhrzeit", "value": lambda: "24 Stunden" if s["clock_24h"] else "12 Stunden",
@@ -429,7 +442,9 @@ class Home(QWidget):
         focus = self.col if home_focus and self.row == APPS else -1
         for i, s in enumerate(self.scale):
             self.scale[i] = approach(s, FOCUS_SCALE if i == focus else 1.0, 0.3, 0.001)
-        self.gear = approach(self.gear, 1.0 if home_focus and self.row == HEADER else 0.0, 0.3, 0.01)
+        self.gear = approach(self.gear, 1.0 if home_focus and self.row == HEADER and self.head_col == 1 else 0.0, 0.3, 0.01)
+        self.avatar_f = approach(getattr(self, "avatar_f", 0.0),
+                                 1.0 if home_focus and self.row == HEADER and self.head_col == 0 else 0.0, 0.3, 0.01)
         self.scroll = approach(self.scroll, self.scroll_target(), 0.25, 0.5)
         self.hero_t = approach(self.hero_t, 1.0, 0.1, 0.01)
         self.intro = approach(self.intro, 1.0, 0.06, 0.01)
@@ -529,6 +544,17 @@ class Home(QWidget):
         W, H = self.width(), self.height()
         u, edge, tile_w, tile_h, gap = self.metrics()
         p.fillRect(self.rect(), BG)
+        if self.view == "profiles":  # „Wer schaut?“
+            self.paint_profiles(p, W, H, u)
+            if self.menu:
+                self.paint_menu(p, W, H, u)
+            if self.dialog:
+                self.paint_dialog(p, W, H, u)
+            if self.osk:
+                self.paint_osk(p, W, H, u)
+            if self.intro < 1:
+                p.fillRect(self.rect(), alpha("#000000", 1 - ease(self.intro)))
+            return
 
         self.paint_hero_art(p, W, H, u)
         self.paint_header(p, W, u, edge)
@@ -560,6 +586,8 @@ class Home(QWidget):
             self.paint_settings(p, W, H, u)
         if self.dialog:
             self.paint_dialog(p, W, H, u)
+        if self.osk:
+            self.paint_osk(p, W, H, u)
         if self.intro < 1:
             p.fillRect(self.rect(), alpha("#000000", 1 - ease(self.intro)))
 
@@ -641,9 +669,14 @@ class Home(QWidget):
         p.setBrush(fill if self.gear > 0.5 else QColor("#3a3d42"))
         p.drawEllipse(QPointF(0, 0), 0.32 * g, 0.32 * g)
         p.restore()
-        if self.gear > 0.05:
-            p.setOpacity(self.gear)
-            self.text(p, QRectF(c.x() - r - 12.8 * u, y, 12 * u, h), "Einstellungen", 1.0 * u, TEXT,
+        # Konto: Kreis mit Anfangsbuchstabe links neben dem Zahnrad
+        a = getattr(self, "avatar_f", 0.0)
+        ac = QPointF(c.x() - 3.6 * u, c.y())
+        self.paint_avatar(p, ac, (1.2 + 0.15 * a) * u, self.account, a)
+        label, lx, f = ("Einstellungen", c.x() - r, self.gear) if self.gear >= a else (self.account["name"], ac.x() - 1.5 * u, a)
+        if f > 0.05:
+            p.setOpacity(f)
+            self.text(p, QRectF(lx - 12.8 * u, y, 12 * u, h), label, 1.0 * u, TEXT,
                       QFont.DemiBold, Qt.AlignRight | Qt.AlignVCenter)
             p.setOpacity(1.0)
 
@@ -707,9 +740,11 @@ class Home(QWidget):
 
     def paint_menu(self, p, W, H, u):
         """Kachel-Menü über der gewählten Kachel (wie bei Google TV)."""
-        if not self.tile_rects or self.col >= len(self.tile_rects):
-            return
-        tile = self.tile_rects[self.col]
+        tile = self.menu.get("anchor")
+        if tile is None:
+            if not self.tile_rects or self.col >= len(self.tile_rects):
+                return
+            tile = self.tile_rects[self.col]
         items = self.menu["items"]
         p.fillRect(self.rect(), alpha("#000000", 0.45))
         row_h, pad = 2.8 * u, 0.8 * u
@@ -717,11 +752,13 @@ class Home(QWidget):
         height = len(items) * row_h + 2 * pad + 2.6 * u
         x = min(max(tile.center().x() - width / 2, 1.5 * u), W - width - 1.5 * u)
         box = QRectF(x, tile.top() - height - 1.2 * u, width, height)
+        if box.top() < 5 * u:  # oben kein Platz (z. B. „Wer schaut?“): unter dem Element zeigen
+            box.moveTop(tile.bottom() + 4.2 * u)
         p.setPen(Qt.NoPen)
         p.setBrush(CARD)
         p.drawRoundedRect(box, 1.2 * u, 1.2 * u)
         self.text(p, QRectF(box.x() + 1.4 * u, box.y() + pad, width - 2.8 * u, 2.2 * u),
-                  self.apps[self.col]["name"], 1.0 * u, MUTED, QFont.DemiBold)
+                  self.menu.get("title", ""), 1.0 * u, MUTED, QFont.DemiBold)
         y = box.y() + pad + 2.6 * u
         for i, (label, _) in enumerate(items):
             r = QRectF(box.x() + pad, y, width - 2 * pad, row_h - 0.3 * u)
