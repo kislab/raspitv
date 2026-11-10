@@ -12,14 +12,17 @@ Mediacenter für den Raspberry Pi 4 im Stil von Google TV – bedienbar mit der 
 
 ## Installation
 
+Ein Befehl im Terminal des Raspberry Pi (Raspberry Pi OS):
+
 ```bash
-git clone https://github.com/kislab/raspitv.git ~/raspitv
-python3 ~/raspitv/raspitv.py
+curl -fsSL https://raw.githubusercontent.com/kislab/raspitv/main/install.sh | bash
 ```
 
-Voraussetzungen (Raspberry Pi OS): `python3-pyqt5`, `chromium` mit Widevine (`/opt/WidevineCdm`).
-In den Einstellungen „Beim Hochfahren starten“ einschalten – dann öffnet sich beim Hochfahren ein
-Terminal und lädt RaspiTV.
+Das lädt RaspiTV nach `~/raspitv`, installiert fehlende Pakete (`python3-pyqt5`, `chromium`,
+`libwidevinecdm0` … – fragt dafür nach dem sudo-Passwort) und legt RaspiTV als Programm an:
+Symbol auf dem Desktop, Eintrag im Startmenü (Unterhaltung) und Autostart beim Hochfahren
+(Terminal öffnet sich und lädt RaspiTV). Ohne Autostart: `… | bash -s -- --no-autostart`.
+Derselbe Befehl aktualisiert eine bestehende Installation.
 
 ## Updates
 
