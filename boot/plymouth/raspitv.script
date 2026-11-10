@@ -1,0 +1,32 @@
+# RaspiTV-Bootbild: Logo mittig auf dem dunklen Hintergrund der Oberfläche, sanft eingeblendet.
+Window.SetBackgroundTopColor(0.055, 0.063, 0.075);     # #0e1013 wie in RaspiTV
+Window.SetBackgroundBottomColor(0.055, 0.063, 0.075);
+
+screen_width = Window.GetWidth();
+screen_height = Window.GetHeight();
+
+logo = Image("logo.png");
+# Logo höchstens 40 % der Bildschirmhöhe hoch, nie größer als im Original
+scale = Math.Min(1, screen_height * 0.4 / logo.GetHeight());
+logo = logo.Scale(logo.GetWidth() * scale, logo.GetHeight() * scale);
+
+sprite = Sprite(logo);
+sprite.SetPosition((screen_width - logo.GetWidth()) / 2, (screen_height - logo.GetHeight()) / 2, 0);
+sprite.SetOpacity(0);
+
+opacity = 0;
+fun refresh_callback() {
+    if (opacity < 1) {
+        opacity = Math.Min(1, opacity + 0.04);   # ca. 0,6 s bei 40 Bildern/s
+        sprite.SetOpacity(opacity);
+    }
+}
+Plymouth.SetRefreshFunction(refresh_callback);
+
+# Meldungen (z. B. Dateisystemprüfung) klein unten anzeigen
+message_sprite = Sprite();
+message_sprite.SetPosition(screen_width * 0.1, screen_height * 0.9, 10000);
+fun message_callback(text) {
+    message_sprite.SetImage(Image.Text(text, 0.6, 0.63, 0.65));
+}
+Plymouth.SetUpdateStatusFunction(message_callback);

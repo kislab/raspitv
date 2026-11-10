@@ -1,0 +1,8 @@
+[Plymouth Theme]
+Name=RaspiTV
+Description=RaspiTV-Logo beim Hochfahren und Ausschalten
+ModuleName=script
+
+[script]
+ImageDir=/usr/share/plymouth/themes/raspitv
+ScriptFile=/usr/share/plymouth/themes/raspitv/raspitv.script

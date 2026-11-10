@@ -31,6 +31,10 @@ Symbol auf dem Desktop, Eintrag im Startmenü (Unterhaltung) und Autostart beim 
 (Terminal öffnet sich und lädt RaspiTV). Ohne Autostart: `… | bash -s -- --no-autostart`.
 Derselbe Befehl aktualisiert eine bestehende Installation.
 
+Der Installer richtet außerdem das **RaspiTV-Bootbild** ein (Logo statt Regenbogen und Raspberry-Pi-Bild,
+Plymouth-Thema `boot/plymouth/`). Ohne: `… | bash -s -- --no-bootlogo`; rückgängig:
+`sudo ~/raspitv/boot/install-bootlogo.sh --remove`. Das Logo zeichnet `boot/make-logo.py`.
+
 ## Updates
 
 Beim Start (Autostart) holt RaspiTV mit `git pull` automatisch die neueste Version aus diesem

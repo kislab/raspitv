@@ -4,15 +4,18 @@
 #
 # Holt RaspiTV von GitHub nach ~/raspitv, installiert fehlende Pakete (fragt dafür einmal nach dem
 # sudo-Passwort) und legt RaspiTV als Programm an: Startmenü, Symbol auf dem Desktop und Autostart.
-# Optionen: --no-autostart (kein Start beim Hochfahren), --dir PFAD (anderer Installationsordner)
+# Optionen: --no-autostart (kein Start beim Hochfahren), --no-bootlogo (Standard-Bootbild behalten),
+#           --dir PFAD (anderer Installationsordner)
 set -euo pipefail
 
 REPO="https://github.com/kislab/raspitv.git"
 DIR="$HOME/raspitv"
 AUTOSTART=1
+BOOTLOGO=1
 while [ $# -gt 0 ]; do
   case "$1" in
     --no-autostart) AUTOSTART=0 ;;
+    --no-bootlogo) BOOTLOGO=0 ;;
     --dir) DIR="$2"; shift ;;
     *) echo "Unbekannte Option: $1" >&2; exit 1 ;;
   esac
@@ -74,6 +77,12 @@ update-desktop-database "$APPS" 2>/dev/null || true
 if [ "$AUTOSTART" = 1 ]; then
   say "Schalte Autostart ein"
   python3 -c "import sys; sys.path.insert(0, sys.argv[1]); import settings; settings.set_autostart(True)" "$DIR"
+fi
+
+# 5. Bootbild: RaspiTV-Logo statt Regenbogen und Raspberry-Pi-Bild
+if [ "$BOOTLOGO" = 1 ] && command -v plymouth-set-default-theme >/dev/null; then
+  say "Richte das RaspiTV-Bootbild ein (dauert etwas: initramfs wird neu gebaut)"
+  sudo "$DIR/boot/install-bootlogo.sh"
 fi
 
 say "Fertig! RaspiTV startest du über das Desktop-Symbol oder das Startmenü (Unterhaltung → RaspiTV)."
