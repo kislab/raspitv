@@ -42,7 +42,7 @@ KEYMAP = {
     Qt.Key_Escape: "back", Qt.Key_Backspace: "back", Qt.Key_Back: "back",
     Qt.Key_Home: "home", Qt.Key_HomePage: "home",
 }
-HEADER, APPS = 0, 1                                   # Zeilen der Startseite
+HEADER, APPS, STORE = 0, 1, 2                         # Zeilen der Startseite
 FOCUSABLE = ("choice", "toggle", "action", "range")   # wählbare Einstellungs-Zeilen
 FOCUS_SCALE = 1.12
 LONG_PRESS = 0.6                                      # Sekunden OK halten für das Kachel-Menü
@@ -68,6 +68,7 @@ class Home(AccountsUI, QWidget):
         self.init_accounts()           # Konto (eigene Logins und Einstellungen) und dessen Einstellungen
         self.row = APPS
         self.col = 0                   # gewählte App
+        self.store_col = 0             # gewählte App in „Verfügbare Apps“
         self.view = self.start_view    # "home" | "settings" | "profiles" („Wer schaut?“)
         self.cats, self.cat = [], 0    # Einstellungs-Kategorien und gewählte Kategorie
         self.items, self.item = [], 0  # Zeilen der gewählten Kategorie und gewählte Zeile
@@ -84,6 +85,9 @@ class Home(AccountsUI, QWidget):
         # animierte Werte
         self.scale = []
         self.scroll = 0.0
+        self.store_scale = []
+        self.store_scroll = 0.0
+        self.vscroll = 0.0             # Startseite nach oben geschoben, solange der App-Store gewählt ist
         self.hero = self.hero_prev = None
         self.hero_t = 1.0
         self.intro = 0.0               # Einblenden beim Start
@@ -105,15 +109,33 @@ class Home(AccountsUI, QWidget):
 
     def refresh_apps(self):
         """Sichtbare Apps neu bestimmen (nach Änderungen in den Einstellungen)."""
+        known = set(self.settings["known"])
+        new = [a["id"] for a in self.all_apps if a["id"] not in known]
+        if new:  # neue Apps im Katalog: Store-Apps erst einmal nicht installieren
+            self.settings["hidden"] = sorted(set(self.settings["hidden"]) | {
+                a["id"] for a in self.all_apps if a["id"] in new and a.get("store")})
+            self.settings["known"] = sorted(known | set(new))
+            self.save_settings()
         hidden = set(self.settings["hidden"])
         order = {app_id: i for i, app_id in enumerate(self.settings["order"])}
         ordered = sorted(self.all_apps, key=lambda a: order.get(a["id"], len(order) + self.all_apps.index(a)))
         self.apps = [a for a in ordered if a["id"] not in hidden] or ordered[:1]
+        self.store = [a for a in self.all_apps if a not in self.apps]
         self.scale = [1.0] * len(self.apps)
+        self.store_scale = [1.0] * len(self.store)
         self.col = min(self.col, len(self.apps) - 1)
-        if self.hero not in self.apps:
-            self.hero = self.hero_prev = self.apps[self.col]
+        self.store_col = min(self.store_col, max(len(self.store) - 1, 0))
+        if self.row == STORE and not self.store:
+            self.row = APPS
+        if self.hero not in self.all_apps or self.hero is not self.focused_app():
+            self.hero = self.hero_prev = self.focused_app()
             self.hero_t = 1.0
+
+    def focused_app(self):
+        """App, die gerade im Banner gezeigt wird (gewählte Kachel der Startseite oder des Stores)."""
+        if self.row == STORE and self.store:
+            return self.store[self.store_col]
+        return self.apps[self.col]
 
     # ---------- Eingabe ----------
 
@@ -167,22 +189,27 @@ class Home(AccountsUI, QWidget):
         elif key in ("left", "right") and self.row == APPS:
             step = -1 if key == "left" else 1
             self.col = min(max(self.col + step, 0), len(self.apps) - 1)
+        elif key in ("left", "right") and self.row == STORE:
+            step = -1 if key == "left" else 1
+            self.store_col = min(max(self.store_col + step, 0), len(self.store) - 1)
         elif key in ("left", "right"):  # Kopfzeile: Konto | Einstellungen
             self.head_col = 0 if key == "left" else 1
         elif key == "up":
-            self.row = HEADER
+            self.row = max(self.row - 1, HEADER)
         elif key == "down":
-            self.row = APPS
+            self.row = STORE if self.row == APPS and self.store else APPS
         elif key == "ok":
             if self.row == APPS:
                 self.launch(self.apps[self.col])
+            elif self.row == STORE:
+                self.ask_install(self.store[self.store_col])
             elif self.head_col == 0:
                 self.open_profiles()
             else:
                 self.open_settings()
 
-        if self.apps[self.col] is not self.hero:
-            self.hero_prev, self.hero, self.hero_t = self.hero, self.apps[self.col], 0.0
+        if self.focused_app() is not self.hero:
+            self.hero_prev, self.hero, self.hero_t = self.hero, self.focused_app(), 0.0
         if not self.anim.isActive():
             self.last_step = time.monotonic()
             self.anim.start()
@@ -204,7 +231,7 @@ class Home(AccountsUI, QWidget):
         app = self.apps[self.col]
         items = [("Öffnen", lambda: self.launch(app)), ("Verschieben", self.start_moving)]
         if len(self.apps) > 1:
-            items.append(("Ausblenden", lambda: self.hide_app(app)))
+            items.append(("Deinstallieren", lambda: self.ask_uninstall(app)))
         self.menu = {"items": items, "index": 0, "title": app["name"]}
 
     def menu_key(self, key):
@@ -243,11 +270,49 @@ class Home(AccountsUI, QWidget):
         full = sorted(self.all_apps, key=lambda a: order.get(a["id"], len(order) + self.all_apps.index(a)))
         self.set("order", [next(visible)["id"] if a["id"] in shown_ids else a["id"] for a in full])
 
-    def hide_app(self, app):
+    # ---------- App-Store ----------
+
+    def ask_install(self, app):
+        self.dialog = {"text": f"{app['name']} installieren?", "app_info": app, "index": 1,
+                       "buttons": [("Abbrechen", self.close_dialog), ("Installieren", lambda: self.install(app))]}
+
+    def install(self, app):
+        """App aus dem Store auf die Startseite holen (hinten in „Deine Apps“)."""
+        self.set("hidden", sorted(set(self.settings["hidden"]) - {app["id"]}))
+        order = [i for i in self.settings["order"] if i != app["id"]] or [a["id"] for a in self.apps]
+        self.set("order", order + [app["id"]])
+        self.refresh_apps()
+        self.refresh_settings_items()
+        self.dialog = {"text": f"{app['name']} ist installiert", "index": 0,
+                       "buttons": [("OK", self.close_dialog), ("Jetzt öffnen", lambda: self.open_installed(app))]}
+
+    def open_installed(self, app):
+        self.dialog = None
+        self.view = "home"
+        self.row, self.col = APPS, self.apps.index(app)
+        self.launch(app)
+
+    def ask_uninstall(self, app):
+        self.confirm(f"{app['name']} deinstallieren?", "Deinstallieren", lambda: self.uninstall(app))
+
+    def refresh_settings_items(self):
+        """Nach Installieren/Deinstallieren die Liste in den Einstellungen neu aufbauen, Auswahl behalten."""
+        if self.view != "settings":
+            return
+        cat, item = self.cat, self.item
+        self.build_items()
+        self.items = self.cats[cat]["items"]
+        focusable = [i for i, it in enumerate(self.items) if it["kind"] in FOCUSABLE]
+        self.item = min(focusable, key=lambda i: abs(i - item)) if focusable else 0
+
+    def uninstall(self, app):
+        """App von der Startseite entfernen; sie steht danach wieder unter „Verfügbare Apps“."""
+        self.dialog = None
         hidden = set(self.settings["hidden"]) | {app["id"]}
         if len(hidden) < len(self.all_apps):
             self.set("hidden", sorted(hidden))
             self.refresh_apps()
+            self.refresh_settings_items()
 
     # ---------- Dienste starten ----------
 
@@ -358,19 +423,14 @@ class Home(AccountsUI, QWidget):
         def cycle_size(step):
             self.set("tile_size", sizes[(sizes.index(s["tile_size"]) + step) % len(sizes)])
 
-        def toggle_app(app):
-            hidden = set(s["hidden"]) ^ {app["id"]}
-            if len(hidden) < len(self.all_apps):  # mindestens eine App bleibt sichtbar
-                self.set("hidden", sorted(hidden))
-                self.refresh_apps()
-
         def volume(step):
             cfg.change_volume(5 * step)
             self.volume = cfg.get_volume()
 
-        apps = [{"kind": "toggle", "label": app["name"],
-                 "value": lambda app=app: app["id"] not in s["hidden"],
-                 "change": lambda step, app=app: toggle_app(app)} for app in self.all_apps]
+        apps = []
+        for app in self.apps:
+            apps.append({"kind": "action", "label": app["name"], "hint": "Deinstallieren" if len(self.apps) > 1 else "",
+                         "run": (lambda app=app: self.ask_uninstall(app)) if len(self.apps) > 1 else (lambda: None)})
         sound = ([{"kind": "range", "label": "Lautstärke", "value": lambda: f"{self.volume} %", "change": volume}]
                  if self.volume is not None else [{"kind": "info", "label": "Lautstärke", "value": "kein Audiogerät gefunden"}])
 
@@ -388,7 +448,7 @@ class Home(AccountsUI, QWidget):
                  {"kind": "toggle", "label": "Animationen", "value": lambda: s["animations"],
                   "change": lambda step: self.set("animations", not s["animations"])},
              ]},
-            {"label": "Apps", "icon": "apps", "desc": "Welche Apps auf der Startseite erscheinen", "items": apps},
+            {"label": "Apps", "icon": "apps", "desc": "Installierte Apps löschen – neue gibt es unter „Verfügbare Apps“", "items": apps},
             {"label": "Jellyfin", "icon": "server", "desc": "Eigener Mediaserver im Heimnetz",
              "items": [
                  {"kind": "choice", "label": "Server (OK = neu suchen)",
@@ -476,6 +536,11 @@ class Home(AccountsUI, QWidget):
         focus = self.col if home_focus and self.row == APPS else -1
         for i, s in enumerate(self.scale):
             self.scale[i] = approach(s, FOCUS_SCALE if i == focus else 1.0, 0.3, 0.001)
+        store_focus = self.store_col if home_focus and self.row == STORE else -1
+        for i, s in enumerate(self.store_scale):
+            self.store_scale[i] = approach(s, FOCUS_SCALE if i == store_focus else 1.0, 0.3, 0.001)
+        self.store_scroll = approach(self.store_scroll, self.scroll_target(self.store, self.store_col), 0.25, 0.5)
+        self.vscroll = approach(self.vscroll, self.row_gap() if self.row == STORE else 0.0, 0.22, 0.5)
         self.gear = approach(self.gear, 1.0 if home_focus and self.row == HEADER and self.head_col == 1 else 0.0, 0.3, 0.01)
         self.avatar_f = approach(getattr(self, "avatar_f", 0.0),
                                  1.0 if home_focus and self.row == HEADER and self.head_col == 0 else 0.0, 0.3, 0.01)
@@ -497,12 +562,19 @@ class Home(AccountsUI, QWidget):
         tile_w = 13.5 * u * cfg.TILE_SIZES[self.settings["tile_size"]]
         return u, 4 * u, tile_w, tile_w * 9 / 16, u
 
-    def scroll_target(self):
+    def row_gap(self):
+        """Abstand zwischen „Deine Apps“ und „Verfügbare Apps“."""
+        u, _, _, tile_h, _ = self.metrics()
+        return tile_h + 5.6 * u
+
+    def scroll_target(self, apps=None, col=None):
         """Gewählte Kachel mittig halten, ohne über die Ränder hinaus zu scrollen."""
+        apps = self.apps if apps is None else apps
+        col = self.col if col is None else col
         u, edge, tile_w, _, gap = self.metrics()
-        n = len(self.apps)
+        n = len(apps)
         total = 2 * edge + n * tile_w + (n - 1) * gap + tile_w * (FOCUS_SCALE - 1)
-        center = edge + self.col * (tile_w + gap) + tile_w / 2
+        center = edge + col * (tile_w + gap) + tile_w / 2
         return min(max(center - self.width() / 2, 0), max(total - self.width(), 0))
 
     def panel_scroll_target(self):
@@ -604,8 +676,8 @@ class Home(AccountsUI, QWidget):
         self.paint_hero_art(p, W, H, u)
         self.paint_header(p, W, u, edge)
 
-        # Hero-Text und App-Reihe, von unten nach oben verankert
-        tiles_y = H - 4.4 * u - tile_h
+        # Hero-Text und App-Reihen, von unten nach oben verankert; im Store rückt alles nach oben
+        tiles_y = H - 4.4 * u - tile_h - self.vscroll
         app = self.hero
         slide = (1 - ease(self.hero_t)) * 1.2 * u  # Text gleitet beim Wechsel leicht herein
         p.setOpacity(0.35 + 0.65 * ease(self.hero_t))
@@ -623,7 +695,21 @@ class Home(AccountsUI, QWidget):
 
         label = "◀ ▶  Kachel verschieben  ·  OK fertig" if self.moving else "Deine Apps"
         self.text(p, QRectF(edge, tiles_y - 2.9 * u, W, 1.5 * u), label, 1.1 * u, TEXT, QFont.DemiBold)
-        self.paint_tiles(p, edge, tiles_y, tile_w, tile_h, gap, u)
+        self.tile_rects = self.paint_tiles(p, edge, tiles_y, tile_w, tile_h, gap, u, self.apps, self.scale, self.scroll)
+        if self.moving and self.col < len(self.tile_rects):  # Pfeile über den Nachbarkacheln
+            self.paint_move_arrows(p, self.tile_rects[self.col], u, self.col > 0, self.col < len(self.apps) - 1)
+
+        store_y = tiles_y + self.row_gap()
+        if store_y < H:
+            self.text(p, QRectF(edge, store_y - 2.9 * u, W, 1.5 * u), "Verfügbare Apps", 1.1 * u, TEXT, QFont.DemiBold)
+            if self.row == STORE:
+                self.text(p, QRectF(edge, store_y - 2.9 * u, W - 2 * edge, 1.5 * u), "OK = installieren",
+                          1.0 * u, MUTED, QFont.Normal, Qt.AlignRight | Qt.AlignVCenter)
+            if self.store:
+                self.paint_tiles(p, edge, store_y, tile_w, tile_h, gap, u, self.store, self.store_scale,
+                                 self.store_scroll, store=True)
+            else:
+                self.text(p, QRectF(edge, store_y, W, tile_h / 2), "Alle Apps sind installiert", 1.1 * u, MUTED)
 
         if self.menu:
             self.paint_menu(p, W, H, u)
@@ -686,9 +772,19 @@ class Home(AccountsUI, QWidget):
         font = self.font_px(1.7 * u, QFont.DemiBold)
         clock_w = QFontMetricsF(font).horizontalAdvance(clock)
         y, h = 1.5 * u, 2.6 * u
-        self.text(p, QRectF(edge, y, clock_w + u, h), clock, 1.7 * u, QColor("#ffffff"), QFont.DemiBold)
+        # Konto ganz links; ist es gewählt, erscheint sein Name daneben und schiebt die Uhr weiter
+        a = getattr(self, "avatar_f", 0.0)
+        ac = QPointF(edge + 1.2 * u, y + h / 2)
+        self.paint_avatar(p, ac, (1.2 + 0.15 * a) * u, self.account, a)
+        name_w = QFontMetricsF(self.font_px(1.0 * u, QFont.DemiBold)).horizontalAdvance(self.account["name"]) + 1.2 * u
+        x = ac.x() + 2.4 * u + name_w * ease(a)
+        if a > 0.05:
+            p.setOpacity(a)
+            self.text(p, QRectF(ac.x() + 2.2 * u, y, name_w, h), self.account["name"], 1.0 * u, TEXT, QFont.DemiBold)
+            p.setOpacity(1.0)
+        self.text(p, QRectF(x, y, clock_w + u, h), clock, 1.7 * u, QColor("#ffffff"), QFont.DemiBold)
         date = QLocale(QLocale.German).toString(now, "dddd, d. MMMM")
-        self.text(p, QRectF(edge + clock_w + 0.9 * u, y + 0.1 * u, W / 2, h), date, 1.0 * u, SOFT)
+        self.text(p, QRectF(x + clock_w + 0.9 * u, y + 0.1 * u, W / 2, h), date, 1.0 * u, SOFT)
 
         # Schriftzug in der Mitte, schlicht in Weiß
         self.text(p, QRectF(0, y, W, h), "RaspiTV", 1.7 * u, QColor("#ffffff"), QFont.ExtraBold, Qt.AlignCenter)
@@ -714,32 +810,25 @@ class Home(AccountsUI, QWidget):
         p.setBrush(fill if self.gear > 0.5 else QColor("#3a3d42"))
         p.drawEllipse(QPointF(0, 0), 0.32 * g, 0.32 * g)
         p.restore()
-        # Konto: Kreis mit Anfangsbuchstabe links neben dem Zahnrad
-        a = getattr(self, "avatar_f", 0.0)
-        ac = QPointF(c.x() - 3.6 * u, c.y())
-        self.paint_avatar(p, ac, (1.2 + 0.15 * a) * u, self.account, a)
-        # Beschriftung immer links vom Konto-Kreis, damit sie ihn nicht überdeckt
-        label, f = ("Einstellungen", self.gear) if self.gear >= a else (self.account["name"], a)
-        lx = ac.x() - 1.6 * u
-        if f > 0.05:
-            p.setOpacity(f)
-            self.text(p, QRectF(lx - 12.8 * u, y, 12 * u, h), label, 1.0 * u, TEXT,
+        if self.gear > 0.05:  # Beschriftung links neben dem Zahnrad
+            p.setOpacity(self.gear)
+            self.text(p, QRectF(c.x() - r - 12.8 * u, y, 12 * u, h), "Einstellungen", 1.0 * u, TEXT,
                       QFont.DemiBold, Qt.AlignRight | Qt.AlignVCenter)
             p.setOpacity(1.0)
 
-    def paint_tiles(self, p, edge, y, tile_w, tile_h, gap, u):
-        """Kachelreihe: die gewählte Kachel wächst und schiebt ihre Nachbarn zur Seite."""
-        x = edge - self.scroll
+    def paint_tiles(self, p, edge, y, tile_w, tile_h, gap, u, apps, scales, scroll, store=False):
+        """Kachelreihe: die gewählte Kachel wächst und schiebt ihre Nachbarn zur Seite. Gibt die Kachel-Rechtecke zurück."""
+        x = edge - scroll
         radius = 0.9 * u
-        self.tile_rects = []
-        for i, app in enumerate(self.apps):
-            s = self.scale[i]
+        rects = []
+        for i, app in enumerate(apps):
+            s = scales[i]
             w, h = tile_w * s, tile_h * s
-            lift = 1.0 * u if self.moving and i == self.col else 0.0  # verschobene Kachel schwebt
+            lift = 1.0 * u if self.moving and not store and i == self.col else 0.0  # verschobene Kachel schwebt
             rect = QRectF(x, y + (tile_h - h) / 2 - lift, w, h)
-            self.tile_rects.append(rect)
+            rects.append(rect)
             x += w + gap
-            if rect.right() < 0 or rect.left() > self.width():
+            if rect.right() < 0 or rect.left() > self.width() or rect.top() > self.height():
                 continue
             f = (s - 1) / (FOCUS_SCALE - 1)  # 0 = normal, 1 = gewählt
             p.setPen(Qt.NoPen)
@@ -760,15 +849,23 @@ class Home(AccountsUI, QWidget):
             if not self.draw_logo(p, app, rect, box_w, box_h, shrink=s / FOCUS_SCALE):
                 self.text(p, rect, app["name"], 1.55 * u * s * tile_w / (13.5 * u), QColor(app["fg"]),
                           QFont.ExtraBold, Qt.AlignCenter, fit=rect.width() * 0.8)
+            if store:  # Store-Kachel: gedämpft, mit „+“-Plakette zum Installieren
+                p.setPen(Qt.NoPen)
+                p.setBrush(alpha("#000000", 0.35 * (1 - f)))
+                p.drawRoundedRect(rect, radius, radius)
+                b = 1.0 * u * s
+                badge = QPointF(rect.right() - 1.5 * u * s, rect.top() + 1.5 * u * s)
+                p.setBrush(alpha("#ffffff", 0.85 + 0.15 * f))
+                p.drawEllipse(badge, b, b)
+                p.setPen(QPen(DARK, 0.2 * u * s, Qt.SolidLine, Qt.RoundCap))
+                p.drawLine(QPointF(badge.x() - 0.5 * b, badge.y()), QPointF(badge.x() + 0.5 * b, badge.y()))
+                p.drawLine(QPointF(badge.x(), badge.y() - 0.5 * b), QPointF(badge.x(), badge.y() + 0.5 * b))
             if f > 0.02:
                 d = 0.28 * u
                 p.setPen(QPen(alpha("#ffffff", f), 0.16 * u))
                 p.setBrush(Qt.NoBrush)
                 p.drawRoundedRect(rect.adjusted(-d, -d, d, d), radius + d, radius + d)
-
-        # Pfeile zuletzt zeichnen, damit sie über den Nachbarkacheln liegen
-        if self.moving and self.col < len(self.tile_rects):
-            self.paint_move_arrows(p, self.tile_rects[self.col], u, self.col > 0, self.col < len(self.apps) - 1)
+        return rects
 
     def paint_move_arrows(self, p, rect, u, left, right):
         """Pfeile links/rechts an der Kachel, die gerade verschoben wird."""
@@ -898,6 +995,10 @@ class Home(AccountsUI, QWidget):
             elif kind in ("choice", "range"):
                 value = f"‹  {item['value']()}  ›" if focused else item["value"]()
                 self.text(p, inner, value, 1.05 * u, DARK if focused else MUTED, QFont.Normal, Qt.AlignRight | Qt.AlignVCenter)
+            elif kind == "action" and "hint" in item:
+                if item["hint"]:
+                    self.text(p, inner, item["hint"], 1.05 * u, DARK if focused else MUTED, QFont.Normal,
+                              Qt.AlignRight | Qt.AlignVCenter)
             elif kind == "action":
                 self.text(p, inner, "›", 1.5 * u, DARK if focused else MUTED, QFont.Normal, Qt.AlignRight | Qt.AlignVCenter)
             elif kind == "info":

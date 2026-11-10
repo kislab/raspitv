@@ -16,14 +16,15 @@ DEFAULTS = {
     "tile_size": "mittel",
     "clock_24h": True,
     "animations": True,
-    "hidden": [],  # IDs ausgeblendeter Apps
+    "hidden": [],  # IDs nicht installierter Apps
+    "known": [],   # IDs aller Apps, die dieses Konto schon kennt (neue Store-Apps starten deinstalliert)
     "order": [],   # eigene Reihenfolge der Kacheln (App-IDs); fehlende Apps kommen hinten dran
     "jellyfin_url": "",  # Adresse des Jellyfin-Servers (wird im Netz gesucht)
 }
 
 
 # Diese Einstellungen gehören dem jeweiligen Konto, alle anderen gelten für das ganze Gerät
-ACCOUNT_KEYS = ("tile_size", "clock_24h", "animations", "hidden", "order")
+ACCOUNT_KEYS = ("tile_size", "clock_24h", "animations", "hidden", "known", "order")
 
 
 def _read(path):
