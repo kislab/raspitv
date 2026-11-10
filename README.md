@@ -9,7 +9,7 @@ Mediacenter für den Raspberry Pi 4 im Stil von Google TV – bedienbar mit der 
   deinstallieren über das Kachel-Menü oder Einstellungen → Apps.
 - **Player**: Chromium im Kioskmodus (nur für DRM-Videos), mit eigener Erweiterung `tv-extension/`,
   die Netflix, Disney+ und Prime Video wie die jeweilige TV-App aussehen lässt.
-- **Jellyfin**: der Server im Heimnetz wird automatisch gefunden (Einstellungen → Jellyfin).
+- **Jellyfin**: der Server im Heimnetz wird beim Öffnen automatisch gefunden; Einstellungen macht man in der Jellyfin-App selbst.
   Anmelden ohne Tastatur: „Quick Connect verwenden“ wählen und den Code in der Jellyfin-App am Handy bestätigen.
 - **Konten**: „Wer schaut?“ wie bei Google TV. Jedes Konto hat eigene Logins bei Netflix, Disney+,
   YouTube, Prime Video & Co. (eigenes Browser-Profil), eigene Kachel-Reihenfolge und optional eine PIN.

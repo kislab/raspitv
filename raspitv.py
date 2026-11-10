@@ -556,12 +556,6 @@ class Home(AccountsUI, QObject):
              ]},
             {"label": "Apps", "icon": "apps", "desc": "Installierte Apps löschen – neue gibt es unter „Verfügbare Apps“",
              "items": apps},
-            {"label": "Jellyfin", "icon": "server", "desc": "Eigener Mediaserver im Heimnetz",
-             "items": [
-                 {"kind": "choice", "label": "Server (OK = neu suchen)",
-                  "value": lambda: (s["jellyfin_url"] or "nicht gefunden").replace("http://", ""),
-                  "change": lambda step: self.server_url("jellyfin_url", search=True)},
-             ]},
             {"label": "Ton", "icon": "sound", "desc": "Lautstärke des Geräts", "items": sound},
             {"label": "System", "icon": "power", "desc": "Netzwerk, Start, Updates und Ausschalten",
              "items": [
