@@ -71,6 +71,12 @@ Canvas {
             g.beginPath(); g.arc(0, 0, 0.72 * gr, 0, 2 * Math.PI); g.fill()
             g.fillStyle = hole
             g.beginPath(); g.arc(0, 0, 0.32 * gr, 0, 2 * Math.PI); g.fill()
+        } else if (name === "wifi") {
+            var cy = y + 0.55 * r
+            for (var w = 1; w <= 3; w++) {
+                g.beginPath(); g.arc(x, cy, w * 0.42 * r, -Math.PI * 0.78, -Math.PI * 0.22); g.stroke()
+            }
+            g.beginPath(); g.arc(x, cy, 0.09 * s, 0, 2 * Math.PI); g.fill()
         } else if (name === "plus") {
             line(x - 0.5 * r, y, x + 0.5 * r, y)
             line(x, y - 0.5 * r, x, y + 0.5 * r)

@@ -14,6 +14,8 @@ Mediacenter für den Raspberry Pi 4 im Stil von Google TV – bedienbar mit der 
 - **Konten**: „Wer schaut?“ wie bei Google TV. Jedes Konto hat eigene Logins bei Netflix, Disney+,
   YouTube, Prime Video & Co. (eigenes Browser-Profil), eigene Kachel-Reihenfolge und optional eine PIN.
   Wechseln: Konto-Symbol oben links; bearbeiten: OK auf einem Konto lange drücken.
+- **WLAN und Bluetooth**: Einstellungen → System → WLAN (Netz wählen, Passwort über die Bildschirmtastatur)
+  bzw. Bluetooth (Kopfhörer, Lautsprecher, Controller koppeln). Das verbundene WLAN steht oben rechts neben dem Zahnrad.
 - **Kacheln anordnen**: OK lange gedrückt halten → Menü mit Öffnen, Verschieben, Deinstallieren.
 - **Fernbedienung**: HTTP-Schnittstelle auf `127.0.0.1:8765` (`POST /key {"key": "up"}`, `"menu"` = langes OK, `GET /status`).
 

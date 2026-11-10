@@ -69,6 +69,7 @@ Item {
     Item {
         id: content
         readonly property var cat: page.st.cats.length ? page.st.cats[page.st.cat] : null
+        readonly property var sub: page.st.sub   // Unterseite (WLAN, Bluetooth) statt der Kategorie
         property real t: 1
         x: page.sideW + 5 * app.u + (1 - t) * 1.5 * app.u
         width: Math.min(page.width - (page.sideW + 5 * app.u) - 6 * app.u, 50 * app.u)
@@ -76,20 +77,20 @@ Item {
         opacity: 0.25 + 0.75 * t
         visible: !!cat
 
-        readonly property int catIndex: page.st.cat
-        onCatIndexChanged: { t = 0; catAnim.restart() }
+        readonly property string pageKey: page.st.cat + "/" + (sub ? sub.title : "")
+        onPageKeyChanged: { t = 0; catAnim.restart() }
         NumberAnimation { id: catAnim; target: content; property: "t"; to: 1; duration: app.ms(300); easing.type: Easing.OutCubic }
 
         Label {
             y: 2.4 * app.u; height: 3.6 * app.u; width: parent.width
-            text: content.cat ? content.cat.label : ""
+            text: content.sub ? content.cat.label + "  ›  " + content.sub.title : content.cat ? content.cat.label : ""
             size: 2.6 * app.u
             weight: Font.DemiBold
             color: "white"
         }
         Label {
             y: 6 * app.u; height: 1.8 * app.u; width: parent.width
-            text: content.cat ? content.cat.desc : ""
+            text: content.sub ? content.sub.desc + "   ·   Zurück: ◀" : content.cat ? content.cat.desc : ""
             size: 1.1 * app.u
             color: app.muted
         }

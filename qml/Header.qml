@@ -78,7 +78,35 @@ Item {
             hole: header.gearF > 0.5 ? "#e8eaed" : "#3a3d42"
         }
     }
+    // WLAN: Symbol + Netzname links vom Zahnrad. Ist das Zahnrad gewählt, rückt es vor die
+    // Beschriftung „Einstellungen“; lange Namen werden gekürzt und reichen nie bis zur Mitte.
+    Item {
+        id: wifi
+        visible: s.wifiName !== ""
+        readonly property real labelW: settingsLabel.implicitWidth + 1.2 * app.u
+        width: wifiIcon.width + 0.5 * app.u + wifiName.width
+        height: header.h
+        x: gear.x - 1.2 * app.u - width - labelW * header.gearF
+        y: header.y0
+        Icon {
+            id: wifiIcon
+            name: "wifi"
+            width: 1.3 * app.u
+            anchors.verticalCenter: parent.verticalCenter
+            color: app.soft
+        }
+        Label {
+            id: wifiName
+            x: wifiIcon.width + 0.5 * app.u
+            width: Math.min(implicitWidth, 11 * app.u)
+            height: parent.height
+            text: s.wifiName
+            size: 0.95 * app.u
+            color: app.soft
+        }
+    }
     Label {
+        id: settingsLabel
         x: gear.x - 0.6 * app.u - 12 * app.u; width: 12 * app.u
         y: header.y0; height: header.h
         horizontalAlignment: Text.AlignRight

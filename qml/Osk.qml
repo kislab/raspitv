@@ -111,13 +111,14 @@ Item {
                             readonly property bool focused: osk.o && parent.r === osk.o.row && index === osk.o.col
                             width: osk.keyWidth(label); height: osk.keyH
                             radius: 0.6 * app.u
-                            color: focused ? app.text : Qt.rgba(1, 1, 1, 0.1)
+                            readonly property bool latched: label === "⇧" && osk.o && osk.o.shift
+                            color: focused ? app.text : latched ? app.blue : Qt.rgba(1, 1, 1, 0.1)
                             Label {
                                 anchors.centerIn: parent
                                 text: parent.label
                                 size: 1.2 * app.u
                                 weight: Font.DemiBold
-                                color: parent.focused ? app.dark : app.text
+                                color: parent.focused || parent.latched ? app.dark : app.text
                             }
                         }
                     }

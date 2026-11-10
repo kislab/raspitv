@@ -13,6 +13,7 @@ import os
 import signal
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -32,6 +33,7 @@ except ImportError:
              "  sudo apt-get install -y python3-pyqt5.qtquick qml-module-qtquick2 "
              "qml-module-qtquick-window2 qml-module-qtgraphicaleffects")
 
+import network
 import remote
 import settings as cfg
 from profiles_ui import AccountsUI
@@ -78,6 +80,7 @@ class Home(AccountsUI, QObject):
     """Zustand und Logik der Oberfläche. QML liest `state` und zeichnet danach."""
     key = pyqtSignal(str)       # auch aus dem Fernbedienungs-Thread auslösbar
     stateChanged = pyqtSignal()
+    bgDone = pyqtSignal(object)  # Ergebnis einer Hintergrund-Aufgabe (Funktion, die im Hauptthread läuft)
 
     def __init__(self, apps, player):
         super().__init__()
@@ -97,6 +100,12 @@ class Home(AccountsUI, QObject):
         self.cats, self.cat = [], 0    # Einstellungs-Kategorien und gewählte Kategorie
         self.items, self.item = [], 0  # Zeilen der gewählten Kategorie und gewählte Zeile
         self.pane = "cats"             # Fokus in den Einstellungen: "cats" (links) | "items" (rechts)
+        self.sub = None                # Unterseite in den Einstellungen: None | "wifi" | "bt"
+        self.sub_parent = 0            # Zeile, von der aus die Unterseite geöffnet wurde
+        self.wifi = {"on": False, "nets": [], "scanning": False}
+        self.bt = {"on": False, "paired": [], "found": [], "scanning": False}
+        self.wifi_name = ""            # verbundenes WLAN für die Kopfzeile (alle 15 s im Hintergrund geprüft)
+        self.ticks = 0
         self.volume = None
         self.dialog = None             # {"text", "buttons": [(label, fn)], "index", "app"?}
         self.menu = None               # Kachel-Menü: {"items": [(label, fn)], "index", "title", "anchor", "at"}
@@ -107,6 +116,7 @@ class Home(AccountsUI, QObject):
         self.refresh_apps()
 
         self.key.connect(self.handle)
+        self.bgDone.connect(lambda done: (done(), self.push()))
         QTimer(self, interval=1000, timeout=self.tick).start()
         self.push()
 
@@ -133,7 +143,7 @@ class Home(AccountsUI, QObject):
                                   "app": self.info[self.dialog["app"]["id"]] if self.dialog.get("app") else None}
         state = {
             "view": self.view, "row": self.row, "col": self.col, "storeCol": self.store_col,
-            "headCol": self.head_col, "moving": self.moving,
+            "headCol": self.head_col, "moving": self.moving, "wifiName": self.wifi_name,
             "animations": s["animations"], "clock24": s["clock_24h"], "tileScale": cfg.TILE_SIZES[s["tile_size"]],
             "account": self.account_info(self.account),
             "apps": [self.info[a["id"]] for a in self.apps],
@@ -143,10 +153,10 @@ class Home(AccountsUI, QObject):
             "menu": menu, "dialog": dialog,
             "covered": bool(self.running and time.monotonic() - self.started > COVERED_AFTER),
             "settings": {"cats": [{k: c[k] for k in ("label", "icon", "desc")} for c in self.cats],
-                         "cat": self.cat, "pane": self.pane, "item": self.item,
+                         "cat": self.cat, "pane": self.pane, "item": self.item, "sub": self.sub_info(),
                          "items": [self.item_info(it) for it in self.items]},
             "profiles": {"list": [self.account_info(a) for a in self.acc_data["accounts"]], "prof": self.prof},
-            "osk": dict({k: self.osk[k] for k in ("title", "value", "mode", "row", "col", "error")},
+            "osk": dict({k: self.osk[k] for k in ("title", "value", "mode", "row", "col", "error", "shift")},
                         rows=self.osk_rows()) if self.osk else None,
         }
         text = json.dumps(state, ensure_ascii=False)
@@ -450,7 +460,15 @@ class Home(AccountsUI, QObject):
             if quick:
                 self.launch_failed(app)
             self.activate_window()
+        if self.ticks % 15 == 0 and not self.running:
+            self.update_wifi_name()
+        self.ticks += 1
         self.push()  # u. a. „covered“: Lade-Animation anhalten, sobald der Player vorne liegt
+
+    def update_wifi_name(self):
+        def done(name):
+            self.wifi_name = name
+        self.run_bg(network.wifi_current, done)
 
     # ---------- Einstellungen ----------
 
@@ -467,6 +485,7 @@ class Home(AccountsUI, QObject):
     def select_cat(self, index):
         """Kategorie wählen: rechts deren Zeilen zeigen, oben beginnen."""
         self.cat = index
+        self.sub = None
         self.items = self.cats[index]["items"]
         self.item = next((i for i, it in enumerate(self.items) if it["kind"] in FOCUSABLE), 0)
 
@@ -515,8 +534,13 @@ class Home(AccountsUI, QObject):
                   "change": lambda step: self.server_url("jellyfin_url", search=True)},
              ]},
             {"label": "Ton", "icon": "sound", "desc": "Lautstärke des Geräts", "items": sound},
-            {"label": "System", "icon": "power", "desc": "Start, Updates und Ausschalten",
+            {"label": "System", "icon": "power", "desc": "Netzwerk, Start, Updates und Ausschalten",
              "items": [
+                 {"kind": "header", "label": "Verbindungen"},
+                 {"kind": "action", "label": "WLAN", "hint": network.wifi_current() or
+                  ("nicht verbunden" if network.wifi_enabled() else "aus"), "run": lambda: self.open_sub("wifi")},
+                 {"kind": "action", "label": "Bluetooth", "hint": self.bt_hint(), "run": lambda: self.open_sub("bt")},
+                 {"kind": "header", "label": "Start und Updates"},
                  {"kind": "toggle", "label": "Beim Hochfahren starten", "value": cfg.autostart_enabled,
                   "change": lambda step: cfg.set_autostart(not cfg.autostart_enabled())},
                  {"kind": "action", "label": "Nach Updates suchen", "run": self.run_update},
@@ -549,7 +573,9 @@ class Home(AccountsUI, QObject):
 
         item = self.items[self.item]
         changes = item["kind"] in ("choice", "range")
-        if key == "back" or (key == "left" and not changes):
+        if (key == "back" or (key == "left" and not changes)) and self.sub:
+            self.close_sub()
+        elif key == "back" or (key == "left" and not changes):
             self.pane = "cats"
         elif key in ("up", "down"):
             step = -1 if key == "up" else 1
@@ -565,6 +591,240 @@ class Home(AccountsUI, QObject):
             item["change"](-1 if key == "left" else 1)
         elif key == "ok" and item["kind"] != "range":
             item["change"](1)
+
+    # ---------- Hintergrund-Aufgaben ----------
+
+    def run_bg(self, work, done):
+        """`work()` in einem eigenen Thread ausführen, danach `done(ergebnis)` im Hauptthread."""
+        def run():
+            result = work()
+            self.bgDone.emit(lambda: done(result))
+        threading.Thread(target=run, daemon=True).start()
+
+    def busy(self, text):
+        self.dialog = {"text": text, "buttons": [], "index": 0}
+
+    def notice(self, text, buttons=None):
+        self.dialog = {"text": text, "buttons": buttons or [("OK", self.close_dialog)], "index": 0}
+
+    # ---------- Einstellungen: Unterseiten WLAN und Bluetooth ----------
+
+    SUBS = {"wifi": ("WLAN", "Netz wählen – OK verbindet, beim verbundenen Netz: vergessen"),
+            "bt": ("Bluetooth", "Kopfhörer, Lautsprecher und Controller koppeln")}
+
+    def sub_info(self):
+        if not self.sub:
+            return None
+        title, desc = self.SUBS[self.sub]
+        return {"title": title, "desc": desc}
+
+    def open_sub(self, name):
+        self.sub, self.sub_parent = name, self.item
+        if name == "wifi":
+            self.wifi.update(on=network.wifi_enabled(), nets=network.wifi_scan(rescan=False))
+            self.scan_wifi()
+        else:
+            self.bt.update(on=network.bt_enabled(), paired=network.bt_paired(), found=[])
+        self.rebuild_sub(first=True)
+
+    def close_sub(self):
+        self.sub = None
+        self.build_items()
+        self.items = self.cats[self.cat]["items"]
+        self.item = self.sub_parent
+
+    def rebuild_sub(self, first=False):
+        """Zeilen der Unterseite neu aufbauen; Auswahl möglichst auf derselben Zeile lassen."""
+        if not self.sub:
+            return
+        label = None if first or not self.items or self.item >= len(self.items) else self.items[self.item]["label"]
+        self.items = self.wifi_items() if self.sub == "wifi" else self.bt_items()
+        focusable = [i for i, it in enumerate(self.items) if it["kind"] in FOCUSABLE]
+        same = [i for i in focusable if self.items[i]["label"] == label]
+        self.item = (same or focusable or [0])[0] if first or same else min(
+            focusable, key=lambda i: abs(i - self.item)) if focusable else 0
+
+    # WLAN
+
+    def wifi_items(self):
+        w = self.wifi
+        items = [{"kind": "toggle", "label": "WLAN", "value": lambda: w["on"], "change": lambda step: self.toggle_wifi()}]
+        if not w["on"]:
+            return items
+        items.append({"kind": "header", "label": "Netze in Reichweite" + (" – suche …" if w["scanning"] else "")})
+        for net in w["nets"]:
+            hint = ("Verbunden · " if net["active"] else "") + network.signal_bars(net["signal"])
+            hint += "" if net["secure"] else " · offen"
+            items.append({"kind": "action", "label": net["ssid"], "hint": hint,
+                          "run": lambda net=net: self.wifi_select(net)})
+        if not w["nets"] and not w["scanning"]:
+            items.append({"kind": "info", "label": "Keine Netze gefunden", "value": ""})
+        items.append({"kind": "action", "label": "Neu suchen", "run": self.scan_wifi})
+        return items
+
+    def scan_wifi(self):
+        if self.wifi["scanning"]:
+            return
+        self.wifi["scanning"] = True
+        self.rebuild_sub()
+
+        def done(nets):
+            self.wifi.update(nets=nets, scanning=False)
+            if self.sub == "wifi":
+                self.rebuild_sub()
+        self.run_bg(lambda: network.wifi_scan(rescan=True), done)
+
+    def toggle_wifi(self):
+        on = not self.wifi["on"]
+        self.busy("WLAN wird eingeschaltet …" if on else "WLAN wird ausgeschaltet …")
+
+        def done(result):
+            ok, message = result
+            if ok:
+                self.dialog = None
+            else:
+                self.notice(message)
+            self.wifi.update(on=network.wifi_enabled(), nets=[])
+            self.wifi_name = network.wifi_current()
+            self.rebuild_sub()
+            if self.wifi["on"]:
+                self.scan_wifi()
+        self.run_bg(lambda: network.set_wifi(on), done)
+
+    def wifi_select(self, net):
+        if net["active"]:
+            self.notice(f"Mit {net['ssid']} verbunden", [
+                ("OK", self.close_dialog),
+                ("Netz vergessen", lambda: self.confirm(f"{net['ssid']} vergessen? Das Passwort wird gelöscht.",
+                                                        "Vergessen", lambda: self.wifi_forget(net)))])
+        elif net["ssid"] in network.wifi_known() or not net["secure"]:
+            self.wifi_connect(net, None)
+        else:
+            self.ask_wifi_password(net)
+
+    def ask_wifi_password(self, net):
+        def done(password):
+            if len(password) < 8:
+                self.osk["error"] = "WLAN-Passwörter haben mindestens 8 Zeichen"
+                return
+            self.osk = None
+            self.wifi_connect(net, password)
+        self.open_osk(f"Passwort für {net['ssid']}", "password", done)
+
+    def wifi_connect(self, net, password):
+        self.busy(f"Verbinde mit {net['ssid']} …")
+
+        def done(result):
+            ok, message = result
+            if ok:
+                self.notice(message)
+            elif message == "Falsches Passwort":
+                self.notice("Falsches Passwort", [("Abbrechen", self.close_dialog),
+                                                  ("Nochmal", lambda: self.retry_password(net))])
+            else:
+                self.notice(f"Verbindung fehlgeschlagen: {message}")
+            self.wifi["nets"] = network.wifi_scan(rescan=False)
+            self.wifi_name = network.wifi_current()
+            self.rebuild_sub()
+        self.run_bg(lambda: network.wifi_connect(net["ssid"], password), done)
+
+    def retry_password(self, net):
+        self.dialog = None
+        self.ask_wifi_password(net)
+
+    def wifi_forget(self, net):
+        ok, message = network.wifi_forget(net["ssid"])
+        self.notice(message)
+        self.wifi["nets"] = network.wifi_scan(rescan=False)
+        self.wifi_name = network.wifi_current()
+        self.rebuild_sub()
+
+    # Bluetooth
+
+    @staticmethod
+    def bt_hint():
+        if not network.bt_enabled():
+            return "aus"
+        connected = [d["name"] for d in network.bt_paired() if d["connected"]]
+        return connected[0] if len(connected) == 1 else f"{len(connected)} verbunden" if connected else "an"
+
+    def bt_items(self):
+        b = self.bt
+        items = [{"kind": "toggle", "label": "Bluetooth", "value": lambda: b["on"], "change": lambda step: self.toggle_bt()}]
+        if not b["on"]:
+            return items
+        items.append({"kind": "header", "label": "Gekoppelte Geräte"})
+        for dev in b["paired"]:
+            items.append({"kind": "action", "label": dev["name"], "hint": "Verbunden" if dev["connected"] else "Getrennt",
+                          "run": lambda dev=dev: self.bt_device_menu(dev)})
+        if not b["paired"]:
+            items.append({"kind": "info", "label": "Noch keine Geräte gekoppelt", "value": ""})
+        items.append({"kind": "header", "label": "Neue Geräte" + (" – suche …" if b["scanning"] else "")})
+        for dev in b["found"]:
+            items.append({"kind": "action", "label": dev["name"], "hint": "Koppeln",
+                          "run": lambda dev=dev: self.bt_pair(dev)})
+        items.append({"kind": "action", "label": "Nach Geräten suchen", "hint": None if not b["scanning"] else "…",
+                      "run": self.scan_bt})
+        return items
+
+    def refresh_bt(self):
+        self.bt.update(on=network.bt_enabled(), paired=network.bt_paired())
+        self.rebuild_sub()
+
+    def toggle_bt(self):
+        on = not self.bt["on"]
+        self.busy("Bluetooth wird eingeschaltet …" if on else "Bluetooth wird ausgeschaltet …")
+
+        def done(result):
+            self.dialog = None
+            self.bt["found"] = []
+            self.refresh_bt()
+            if on and not self.bt["on"]:
+                self.notice("Bluetooth ließ sich nicht einschalten")
+        self.run_bg(lambda: network.set_bluetooth(on), done)
+
+    def scan_bt(self):
+        if self.bt["scanning"]:
+            return
+        self.bt["scanning"] = True
+        self.rebuild_sub()
+
+        def done(found):
+            self.bt.update(found=found, scanning=False)
+            if self.sub == "bt":
+                self.refresh_bt()
+        self.run_bg(lambda: network.bt_scan(10), done)
+
+    def bt_pair(self, dev):
+        self.busy(f"Kopple {dev['name']} …")
+
+        def done(result):
+            ok, message = result
+            self.notice(f"{dev['name']}: {message}")
+            self.bt["found"] = [d for d in self.bt["found"] if d["mac"] != dev["mac"]] if ok else self.bt["found"]
+            self.refresh_bt()
+        self.run_bg(lambda: network.bt_pair(dev["mac"]), done)
+
+    def bt_device_menu(self, dev):
+        def toggle():
+            self.busy(("Trenne " if dev["connected"] else "Verbinde ") + dev["name"] + " …")
+
+            def done(result):
+                ok, message = result
+                if ok:
+                    self.dialog = None
+                else:
+                    self.notice(message)
+                self.refresh_bt()
+            self.run_bg(lambda: network.bt_toggle_connection(dev["mac"], dev["connected"]), done)
+
+        def remove():
+            ok, message = network.bt_remove(dev["mac"])
+            self.notice(message)
+            self.refresh_bt()
+        self.notice(dev["name"], [("Abbrechen", self.close_dialog),
+                                  ("Trennen" if dev["connected"] else "Verbinden", toggle),
+                                  ("Entfernen", remove)])
 
 
 class View(QQuickView):

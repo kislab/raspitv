@@ -9,6 +9,10 @@ PIN_LEN = 4
 TEXT_KEYS = [list("ABCDEFGHIJ"), list("KLMNOPQRST"), list("UVWXYZÄÖÜß"), list("1234567890-"),
              ["Leerzeichen", "⌫", "Fertig"]]
 PIN_KEYS = [["1", "2", "3"], ["4", "5", "6"], ["7", "8", "9"], ["⌫", "0", "Fertig"]]
+# Passwörter (WLAN): Groß/klein per ⇧, dazu Sonderzeichen; Buchstaben werden nicht automatisch groß
+PASS_KEYS = [list("1234567890ß"), list("qwertzuiopü"), list("asdfghjklöä"), ["⇧"] + list("yxcvbnm-_."),
+             list("!@#$%&*?+=/"), ["Leerzeichen", "⌫", "Fertig"]]
+MAX_LEN = {"pin": PIN_LEN, "text": 20, "password": 63}
 
 
 class AccountsUI:
@@ -158,11 +162,16 @@ class AccountsUI:
     # ---------- Bildschirmtastatur ----------
 
     def open_osk(self, title, mode, done, value=""):
-        self.osk = {"title": title, "value": value, "mode": mode, "row": 0, "col": 0, "done": done, "error": ""}
+        self.osk = {"title": title, "value": value, "mode": mode, "row": 0, "col": 0, "done": done, "error": "",
+                    "shift": False}
         self.menu = None
 
     def osk_rows(self):
-        return PIN_KEYS if self.osk["mode"] == "pin" else TEXT_KEYS
+        mode = self.osk["mode"]
+        if mode == "password":
+            return [[k.upper() if self.osk["shift"] and len(k) == 1 and k.isalpha() and k != "ß" else k for k in row]
+                    for row in PASS_KEYS]
+        return PIN_KEYS if mode == "pin" else TEXT_KEYS
 
     def osk_key(self, key):
         o, rows = self.osk, self.osk_rows()
@@ -184,14 +193,20 @@ class AccountsUI:
             o["value"] = o["value"][:-1]
         elif label == "Fertig":
             o["done"](o["value"])
+        elif label == "⇧":
+            o["shift"] = not o["shift"]
         elif label == "Leerzeichen":
-            o["value"] += " "
+            if len(o["value"]) < MAX_LEN[o["mode"]]:
+                o["value"] += " "
         elif o["mode"] == "pin":
             if len(o["value"]) < PIN_LEN:
                 o["value"] += label
             if len(o["value"]) == PIN_LEN:
                 o["done"](o["value"])
-        elif len(o["value"]) < 20:
+        elif o["mode"] == "password":
+            if len(o["value"]) < MAX_LEN["password"]:
+                o["value"] += label
+        elif len(o["value"]) < MAX_LEN["text"]:
             first = not o["value"] or o["value"].endswith(" ")
             o["value"] += label if first else label.lower()
 
@@ -213,7 +228,7 @@ class AccountsUI:
                 return True
             if self.osk["mode"] == "pin":
                 self.osk_press(ch)
-            elif len(self.osk["value"]) < 20:
+            elif len(self.osk["value"]) < MAX_LEN[self.osk["mode"]]:
                 self.osk["value"] += ch
                 self.osk["error"] = ""
         else:
