@@ -119,7 +119,22 @@
 
   const rowCache = new Map(); // Reihen-Überschrift -> { title, cards }
 
+  // Kartendaten je Element merken: nach dem Vorladen hat die Seite ~2000 Karten, die sonst alle
+  // 400 ms komplett neu ausgelesen würden (blockierte die Seite, auch die Lautstärke-Anzeige).
+  const cardCache = new WeakMap();
   function cardData(k) {
+    const a = k.querySelector("a[href]");
+    const im = k.querySelector("img");
+    const key = (a ? a.getAttribute("href") : "") + "|" + (im ? im.getAttribute("srcset") || im.getAttribute("src") : "") +
+      "|" + (k.dataset.cardTitle || "") + "|" + (im ? im.complete : "");
+    const hit = cardCache.get(k);
+    if (hit && hit.key === key && Date.now() - hit.at < 30000) return hit.data;
+    const data = readCard(k);
+    cardCache.set(k, { key, data, at: Date.now() });
+    return data;
+  }
+
+  function readCard(k) {
     const a = $("a[href]", k);
     const super_ = k.matches(tid("super-carousel-card"));
     const pics = $$(`img${tid("base-image")}, img`, k);
