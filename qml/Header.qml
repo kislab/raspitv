@@ -107,26 +107,39 @@ Item {
         }
     }
     // Fernbedienung: Symbol rechts neben dem Zahnrad – hell = verbunden, gedämpft und durchgestrichen = getrennt
+    // daneben der Akkustand, falls die Fernbedienung ihn meldet (rot, wenn fast leer)
     Item {
         id: remoteState
         readonly property var r: s.remote
+        readonly property bool hasBattery: !!r && r.battery !== null && r.battery !== undefined
         visible: !!r
-        width: 1.6 * app.u
+        width: 1.6 * app.u + (hasBattery ? battery.implicitWidth + 0.3 * app.u : 0)
         height: header.h
         x: parent.width - app.edge - width
         y: header.y0
         opacity: r && r.connected ? 1 : 0.45
         Behavior on opacity { NumberAnimation { duration: app.ms(200) } }
+        Label {
+            id: battery
+            visible: remoteState.hasBattery
+            height: parent.height
+            text: remoteState.hasBattery ? remoteState.r.battery + " %" : ""
+            size: 0.95 * app.u
+            weight: remoteState.r && remoteState.r.low ? Font.Bold : Font.Normal
+            color: remoteState.r && remoteState.r.low ? "#f28b82" : app.soft
+        }
         Icon {
             id: remoteIcon
-            anchors.centerIn: parent
+            anchors.verticalCenter: parent.verticalCenter
+            anchors.right: parent.right
+            anchors.rightMargin: 0.05 * app.u
             width: 1.5 * app.u
             name: "remote"
             color: remoteState.r && remoteState.r.connected ? app.text : app.soft
         }
         Rectangle {  // Querstrich, solange getrennt
             visible: !!remoteState.r && !remoteState.r.connected
-            anchors.centerIn: parent
+            anchors.centerIn: remoteIcon
             width: 1.8 * app.u; height: 0.13 * app.u; radius: height / 2
             rotation: -45
             color: app.soft

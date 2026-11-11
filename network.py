@@ -247,12 +247,15 @@ class BtAgent:
 
 
 def bt_remotes():
-    """Gekoppelte Fernbedienungen (Gerätetyp „Fernbedienung“, Amazon „AR“, Controller): [{"mac", "name"}]."""
+    """Gekoppelte Fernbedienungen (Gerätetyp „Fernbedienung“, Amazon „AR“, Controller):
+    [{"mac", "name", "battery"}] – battery in Prozent, None wenn unbekannt (getrennt oder ohne Akku-Dienst)."""
     remotes = []
     for dev in _devices("Paired"):
         info = _info(dev["mac"])
         if "Appearance: 0x0180" in info or "Icon: input-gaming" in info or dev["name"] == "AR":
-            remotes.append(dev)
+            battery = re.search(r"Battery Percentage: \S+ \((\d+)\)", info)
+            connected = "Connected: yes" in info
+            remotes.append(dict(dev, battery=int(battery.group(1)) if battery and connected else None))
     return remotes
 
 

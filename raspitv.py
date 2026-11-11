@@ -110,6 +110,8 @@ class Home(AccountsUI, JellyfinUI, QObject):
         self.wifi_name = ""            # verbundenes WLAN für die Kopfzeile (alle 15 s im Hintergrund geprüft)
         self.remote_name = ""          # gekoppelte Bluetooth-Fernbedienung (Kopfzeile)
         self.remote_macs = []          # Adressen gekoppelter Fernbedienungen (für remote_input)
+        self.remote_battery = None     # Akkustand der Fernbedienung in Prozent (falls sie ihn meldet)
+        self.battery_warned = False    # Hinweis „Akku fast leer“ schon gezeigt
         self.remote_input = None       # liest Fernbedienungen direkt (in main() gesetzt)
         self.pairing_until = 0.0       # bis wann der Bluetooth-Agent Kopplungen annimmt
         self.ticks = 0
@@ -161,7 +163,7 @@ class Home(AccountsUI, JellyfinUI, QObject):
         state = {
             "view": self.view, "row": self.row, "col": self.col, "storeCol": self.store_col,
             "headCol": self.head_col, "moving": self.moving, "wifiName": self.wifi_name,
-            "remote": {"name": self.remote_name,
+            "remote": {"name": self.remote_name, "battery": self.remote_battery, "low": self.battery_low(),
                        "connected": bool(self.remote_input and self.remote_input.open)} if self.remote_name else None,
             "animations": s["animations"], "clock24": s["clock_24h"], "tileScale": cfg.TILE_SIZES[s["tile_size"]],
             "account": self.account_info(self.account),
@@ -515,6 +517,17 @@ class Home(AccountsUI, JellyfinUI, QObject):
     def set_remotes(self, remotes):
         self.remote_name = remotes[0]["name"] if remotes else ""
         self.remote_macs = [r["mac"] for r in remotes]
+        battery = remotes[0].get("battery") if remotes else None
+        if battery is not None:  # getrennt: letzten Stand behalten
+            self.remote_battery = battery
+        if self.battery_low() and not self.battery_warned:
+            self.battery_warned = True
+            self.show_toast(f"Akku der Fernbedienung fast leer ({self.remote_battery} %)", 8)
+        elif self.remote_battery is not None and self.remote_battery > 30:
+            self.battery_warned = False  # neue Batterien: später wieder warnen
+
+    def battery_low(self):
+        return self.remote_battery is not None and self.remote_battery <= 15
 
     def bt_busy(self):
         """Läuft in den Einstellungen gerade eine Bluetooth-Suche oder Kopplung?"""
