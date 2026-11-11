@@ -86,18 +86,20 @@ def set_autostart(enabled):
         AUTOSTART.unlink(missing_ok=True)
         return
     AUTOSTART.parent.mkdir(parents=True, exist_ok=True)
-    AUTOSTART.write_text(
+    text = (
         "[Desktop Entry]\n"
         "Type=Application\n"
         "Name=RaspiTV (Terminal)\n"
         "Comment=Öffnet ein Terminal und startet darin RaspiTV\n"
         "# Nach dem Beenden von RaspiTV bleibt das Terminal mit einer Shell offen.\n"
-        # Vor dem Start die neueste Version von GitHub holen (ohne Netz geht es mit der alten weiter)
-        f'Exec=lxterminal --title=RaspiTV -e bash -c "cd {ROOT} && git pull --ff-only || true; python3 raspitv.py; exec bash"\n'
+        # Zuerst das Startbild (deckt Desktop und Terminal ab, bis RaspiTV zu sehen ist), dann die neueste
+        # Version von GitHub holen (ohne Netz geht es mit der alten weiter) und RaspiTV starten
+        f'Exec=lxterminal --title=RaspiTV -e bash -c "cd {ROOT} && (python3 splash.py &); git pull --ff-only || true; python3 raspitv.py; exec bash"\n'
         "Icon=video-display\n"
-        "Terminal=false\n",
-        encoding="utf-8",
+        "Terminal=false\n"
     )
+    if not AUTOSTART.exists() or AUTOSTART.read_text(encoding="utf-8") != text:
+        AUTOSTART.write_text(text, encoding="utf-8")
 
 
 # ---------- Lautstärke (PipeWire) ----------

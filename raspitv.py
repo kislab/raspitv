@@ -942,6 +942,19 @@ def main():
     signal.signal(signal.SIGHUP, lambda *_: app.quit())  # Terminal wurde geschlossen
     QTimer(app, interval=200, timeout=lambda: None).start()  # Python-Signale auch während Qt läuft annehmen
     view.showFullScreen()
+
+    # Startbild (splash.py) schließen, sobald das erste Bild der Oberfläche zu sehen ist
+    def ready():
+        view.frameSwapped.disconnect(ready)
+        runtime = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}"))
+        try:
+            (runtime / "raspitv-ready").touch()
+        except OSError:
+            pass
+    view.frameSwapped.connect(ready)
+    # Autostart-Eintrag nach Updates auf den neuen Stand bringen (z. B. Startbild)
+    if cfg.autostart_enabled():
+        cfg.set_autostart(True)
     sys.exit(app.exec_())
 
 
