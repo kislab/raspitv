@@ -116,6 +116,13 @@ class Home(AccountsUI, JellyfinUI, QObject):
         self.volume = None
         self.outputs = []  # Audio-Ausgänge (für Einstellungen → Ton)
         self.vol = {"value": 0, "muted": False, "seq": 0}  # Lautstärke-Anzeige (seq zählt Tastendrücke)
+        self.last_input = time.monotonic()  # letzter Tastendruck (Bildschirmschoner, Bildschirm aus)
+        self.saver = None              # None | "clock" (Bildschirmschoner) | "off" (Bildschirm aus)
+        self.sleep_min = 0             # Sleep-Timer: gewählte Minuten (0 = aus)
+        self.sleep_at = None           # … und wann er abläuft (monotonic)
+        self.sleep_warned = False      # Warnung „gleich wird ausgeschaltet“ ist zu sehen
+        self.toast = None              # Hinweis oben: {"text", "seq"}
+        self.toast_until = 0.0
         self.dialog = None            # {"text", "buttons": [(label, fn)], "index", "app"?}
         self.menu = None               # Kachel-Menü: {"items": [(label, fn)], "index", "title", "anchor", "at"}
         self.moving = False            # Kachel wird gerade verschoben
@@ -163,6 +170,7 @@ class Home(AccountsUI, JellyfinUI, QObject):
             "allApps": [self.info[a["id"]] for a in self.all_apps],
             "hero": self.focused_app()["id"],
             "menu": menu, "dialog": dialog, "jf": self.jf_state(), "vol": self.vol,
+            "saver": self.saver, "sleep": self.sleep_left(), "toast": self.toast,
             "covered": bool(self.running and time.monotonic() - self.started > COVERED_AFTER),
             "settings": {"cats": [{k: c[k] for k in ("label", "icon", "desc")} for c in self.cats],
                          "cat": self.cat, "pane": self.pane, "item": self.item, "sub": self.sub_info(),
@@ -223,6 +231,9 @@ class Home(AccountsUI, JellyfinUI, QObject):
     # ---------- Eingabe ----------
 
     def key_press(self, event):
+        if self.activity():  # Taste weckt nur den Bildschirm auf
+            self.push()
+            return
         if self.osk_type(event):  # echte Tastatur tippt in die Bildschirmtastatur
             self.push()
             return
@@ -254,6 +265,9 @@ class Home(AccountsUI, JellyfinUI, QObject):
     def handle(self, key):
         if key in ("volumeup", "volumedown", "mute"):  # z. B. über POST /key (CEC, Handy)
             threading.Thread(target=self.remote_extra, args=(key,), daemon=True).start()
+            return
+        if self.activity():  # Taste weckt nur den Bildschirm auf
+            self.push()
             return
         if self.running:
             if key == "home":  # alle anderen Tasten gehören der Seite im Player
@@ -484,6 +498,11 @@ class Home(AccountsUI, JellyfinUI, QObject):
             self.activate_window()
         if self.ticks % 15 == 0 and not self.running:
             self.update_wifi_name()
+        now = time.monotonic()
+        self.check_sleep(now)
+        self.check_saver(now)
+        if self.toast and now > self.toast_until:
+            self.toast = None
         self.ticks += 1
         self.push()  # u. a. „covered“: Lade-Animation anhalten, sobald der Player vorne liegt
 
@@ -507,6 +526,7 @@ class Home(AccountsUI, JellyfinUI, QObject):
 
     def remote_extra(self, key):
         """Tasten der Fernbedienung, die RaspiTV selbst erledigt (aus dem Lese-Thread)."""
+        self.bgDone.emit(self.activity)  # Lautstärke usw. zählen auch als Tastendruck
         if key in ("volumeup", "volumedown", "mute"):
             volume, muted = cfg.volume_key(key)
             if volume is not None:
@@ -529,6 +549,93 @@ class Home(AccountsUI, JellyfinUI, QObject):
             self.volume = volume  # Lautstärke-Zeile in den Einstellungen zieht mit
             self.vol = {"value": volume, "muted": muted, "seq": self.vol["seq"] + 1}
         self.bgDone.emit(update)
+
+    # ---------- Ruhezustand: Sleep-Timer, Bildschirmschoner, Bildschirm aus ----------
+
+    def activity(self):
+        """Eine Taste wurde gedrückt. Weckt den Bildschirm (dann True: die Taste ist damit verbraucht)
+        und verlängert den Sleep-Timer, wenn er gerade warnt."""
+        self.last_input = time.monotonic()
+        if self.sleep_warned:
+            self.sleep_at = time.monotonic() + 15 * 60
+            self.sleep_warned = False
+            self.show_toast("Sleep-Timer um 15 Minuten verlängert")
+        if not self.saver:
+            return False
+        if self.saver == "off":
+            threading.Thread(target=cfg.screen_power, args=(True,), daemon=True).start()
+        self.saver = None
+        return True
+
+    def sleep_left(self):
+        """Verbleibende Minuten des Sleep-Timers (aufgerundet), 0 = aus."""
+        if not self.sleep_at:
+            return 0
+        return max(1, -int(-(self.sleep_at - time.monotonic()) // 60))
+
+    def set_sleep(self, step):
+        times = cfg.SLEEP_TIMES
+        self.sleep_min = times[(times.index(self.sleep_min) + step) % len(times)]
+        self.sleep_at = time.monotonic() + self.sleep_min * 60 if self.sleep_min else None
+        self.sleep_warned = False
+
+    def check_sleep(self, now):
+        if not self.sleep_at:
+            return
+        left = self.sleep_at - now
+        if left <= 0:
+            self.sleep_now()
+        elif left <= 60 and not self.sleep_warned:
+            self.sleep_warned = True
+            self.show_toast("Sleep-Timer: Gleich geht RaspiTV schlafen – Taste drücken für 15 Minuten mehr", 60)
+
+    def sleep_now(self):
+        """Sleep-Timer abgelaufen: Wiedergabe beenden, zur Startseite, Bildschirm aus."""
+        self.sleep_min, self.sleep_at, self.sleep_warned = 0, None, False
+        self.hide_toast()
+        if self.mpv.running():
+            self.mpv.stop()
+        if self.running:
+            self.go_home()
+        self.dialog = self.menu = None
+        self.screen_off()
+
+    def show_saver(self):
+        self.last_input = time.monotonic()
+        self.saver = "clock"
+
+    def check_saver(self, now):
+        if self.running or self.mpv.running():  # beim Schauen nie
+            self.last_input = now
+            return
+        idle = now - self.last_input
+        saver, off = self.settings["saver_min"], self.settings["screen_off_min"]
+        if off and idle >= off * 60:
+            if self.saver != "off":
+                self.screen_off()
+        elif saver and idle >= saver * 60 and not self.saver:
+            self.saver = "clock"
+
+    def screen_off(self):
+        self.saver = "off"
+        QTimer.singleShot(1300, lambda: self.saver == "off" and threading.Thread(
+            target=cfg.screen_power, args=(False,), daemon=True).start())  # erst schwarz einblenden
+
+    def show_toast(self, text, seconds=4):
+        """Hinweis oben einblenden – in RaspiTV, im Jellyfin-Player und in Netflix & Co."""
+        self.toast = {"text": text, "seq": (self.toast or {}).get("seq", 0) + 1}
+        self.toast_until = time.monotonic() + seconds
+        if self.player.running():
+            remote.notify(f"toast:{seconds}:{text}")
+        if self.mpv.running():
+            self.mpv.show_toast(text, seconds)
+
+    def hide_toast(self):
+        self.toast = None
+        if self.player.running():
+            remote.notify("toast:0:")
+        if self.mpv.running():
+            self.mpv.show_toast("")
 
     # ---------- Einstellungen ----------
 
@@ -619,6 +726,14 @@ class Home(AccountsUI, JellyfinUI, QObject):
         def cycle_size(step):
             self.set("tile_size", sizes[(sizes.index(s["tile_size"]) + step) % len(sizes)])
 
+        def cycle(name, times, step):
+            value = s[name] if s[name] in times else times[0]
+            self.set(name, times[(times.index(value) + step) % len(times)])
+            self.last_input = time.monotonic()
+
+        def minutes(value, zero):
+            return zero if not value else f"{value // 60} Std" if value % 60 == 0 else f"{value} Min"
+
         def volume(step):
             cfg.change_volume(5 * step)
             self.volume = cfg.get_volume()
@@ -658,6 +773,20 @@ class Home(AccountsUI, JellyfinUI, QObject):
             {"label": "Apps", "icon": "apps", "desc": "Installierte Apps löschen – neue gibt es unter „Verfügbare Apps“",
              "items": apps},
             {"label": "Ton", "icon": "sound", "desc": "Lautstärke und Ausgang: HDMI, Klinke, Bluetooth", "items": sound},
+            {"label": "Ruhezustand", "icon": "moon", "desc": "Sleep-Timer, Bildschirmschoner und Bildschirm aus",
+             "items": [
+                 {"kind": "choice", "label": "Sleep-Timer",
+                  "value": lambda: f"noch {self.sleep_left()} Min" if self.sleep_at else "Aus",
+                  "change": self.set_sleep},
+                 {"kind": "header", "label": "Wenn keine Taste gedrückt wird"},
+                 {"kind": "choice", "label": "Bildschirmschoner nach",
+                  "value": lambda: minutes(s["saver_min"], "Aus"),
+                  "change": lambda step: cycle("saver_min", cfg.SAVER_TIMES, step)},
+                 {"kind": "choice", "label": "Bildschirm ausschalten nach",
+                  "value": lambda: minutes(s["screen_off_min"], "Nie"),
+                  "change": lambda step: cycle("screen_off_min", cfg.SCREEN_OFF_TIMES, step)},
+                 {"kind": "action", "label": "Bildschirmschoner jetzt zeigen", "run": self.show_saver},
+             ]},
             {"label": "System", "icon": "power", "desc": "Netzwerk, Start, Updates und Ausschalten",
              "items": [
                  {"kind": "header", "label": "Verbindungen"},

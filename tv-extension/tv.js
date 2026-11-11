@@ -331,9 +331,26 @@
     volTimer = setTimeout(() => vol.classList.remove("tv-vol-on"), 2500);
   }
 
+  // Hinweis oben (z. B. Sleep-Timer): "toast:<sekunden>:<text>", "toast:0:" blendet aus.
+  const toast = document.createElement("div");
+  toast.id = "tv-toast";
+  let toastTimer = null;
+  function showToast(seconds, text) {
+    const host = document.fullscreenElement || document.documentElement;
+    if (toast.parentNode !== host) host.append(toast);
+    clearTimeout(toastTimer);
+    if (!text || !seconds) return toast.classList.remove("tv-toast-on");
+    toast.textContent = text;
+    toast.classList.add("tv-toast-on");
+    toastTimer = setTimeout(() => toast.classList.remove("tv-toast-on"), seconds * 1000);
+  }
+
   chrome.runtime.onMessage.addListener((message) => {
     const v = /^volume:(\d+):([01])$/.exec(message.key || "");
-    if (v) {
+    const t = /^toast:(\d+):(.*)$/s.exec(message.key || "");
+    if (t) {
+      showToast(+t[1], t[2]);
+    } else if (v) {
       showVolume(+v[1], v[2] === "1");
     } else if (message.key === "playpause") {  // Play/Pause der Fernbedienung: laufendes Video umschalten
       const video = [...document.querySelectorAll("video")].find((v) => v.readyState > 0);

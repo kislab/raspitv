@@ -311,6 +311,8 @@ class MpvPlayer:
         self.vol_state = None    # (Prozent, stumm?) der Lautstärke-Anzeige
         self.vol_until = 0.0
         self.vol_on = False
+        self.toast_until = 0.0
+        self.toast_on = False
 
     def running(self):
         return self.proc is not None and self.proc.poll() is None
@@ -463,6 +465,9 @@ class MpvPlayer:
                 if self.vol_on and time.monotonic() > self.vol_until:
                     self.overlay_command({"name": "osd-overlay", "id": 2, "format": "none", "data": ""})
                     self.vol_on = False
+                if self.toast_on and time.monotonic() > self.toast_until:
+                    self.overlay_command({"name": "osd-overlay", "id": 3, "format": "none", "data": ""})
+                    self.toast_on = False
             self.drain_overlay_sock()
             time.sleep(0.1)
         self.close_overlay_sock()
@@ -493,6 +498,17 @@ class MpvPlayer:
                                   "data": "\n".join(osd.volume(value, muted)),
                                   "res_x": osd.W, "res_y": osd.H, "z": 20})
             self.vol_on = True
+
+    def show_toast(self, message, seconds=4):
+        """Hinweis oben einblenden (leer = sofort ausblenden)."""
+        import jellyfin_osd as osd
+        with self.ui_lock:
+            self.toast_until = time.monotonic() + (seconds if message else 0)
+            if message:
+                self.overlay_command({"name": "osd-overlay", "id": 3, "format": "ass-events",
+                                      "data": "\n".join(osd.toast(message)),
+                                      "res_x": osd.W, "res_y": osd.H, "z": 21})
+                self.toast_on = True
 
     def open_menu(self):
         import jellyfin_osd as osd

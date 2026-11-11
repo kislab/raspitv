@@ -132,6 +132,30 @@ Item {
             color: app.soft
         }
     }
+    // Sleep-Timer läuft: Mond + verbleibende Minuten links vom WLAN
+    Item {
+        id: sleepState
+        visible: s.sleep > 0
+        width: moon.width + 0.4 * app.u + sleepText.implicitWidth
+        height: header.h
+        x: (wifi.visible ? wifi.x : gear.x - wifi.labelW * header.gearF) - 1.5 * app.u - width
+        y: header.y0
+        Icon {
+            id: moon
+            name: "moon"
+            width: 1.2 * app.u
+            anchors.verticalCenter: parent.verticalCenter
+            color: app.blue
+        }
+        Label {
+            id: sleepText
+            x: moon.width + 0.4 * app.u
+            height: parent.height
+            text: s.sleep + " Min"
+            size: 0.95 * app.u
+            color: app.soft
+        }
+    }
     Label {
         id: settingsLabel
         x: gear.x - 0.6 * app.u - 12 * app.u; width: 12 * app.u

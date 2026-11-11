@@ -34,6 +34,12 @@ Mediacenter für den Raspberry Pi 4 im Stil von Google TV – bedienbar mit der 
   Einstellungen → Ton → **Ton ausgeben über**: HDMI (mit dem Namen des Fernsehers aus dessen EDID), Klinke,
   Bluetooth- und USB-Geräte; Auswahl mit Testton. „Neue Geräte automatisch verwenden“: verbindet sich ein
   Bluetooth-/USB-Audiogerät, kommt der Ton dort heraus, ist es wieder weg, zurück zum selbst gewählten Ausgang.
+- **Ruhezustand** (Einstellungen → Ruhezustand): **Sleep-Timer** 15 Min bis 2 Std – oben rechts steht der Mond mit
+  den restlichen Minuten; eine Minute vorher ein Hinweis (auch in Netflix & Co. und im Jellyfin-Player), ein
+  Tastendruck verlängert um 15 Minuten, sonst endet die Wiedergabe und der Bildschirm geht aus.
+  **Bildschirmschoner** (Uhr und Datum, wandern alle 20 s – kein Einbrennen) und **Bildschirm aus**, wenn so lange
+  keine Taste gedrückt wurde (nie während ein Dienst oder Film läuft). Bildschirm aus = HDMI-Ausgang per
+  `wlr-randr` abschalten (wlopm/DPMS geht unter labwc nicht); die nächste Taste schaltet ihn wieder ein.
 - **Fernbedienung**: HTTP-Schnittstelle auf `127.0.0.1:8765` (`POST /key {"key": "up"}`, `"menu"` = langes OK,
   `"volumeup"`/`"volumedown"`/`"mute"`, `GET /status`).
 

@@ -56,7 +56,9 @@ Item {
     }
     Dialog { anchors.fill: parent; visible: !!s.dialog }
     Osk { anchors.fill: parent; visible: !!s.osk }
+    Screensaver { anchors.fill: parent }
     VolumeOsd { anchors.fill: parent }
+    Toast { anchors.fill: parent }
 
     // Einblenden beim Start
     Rectangle {

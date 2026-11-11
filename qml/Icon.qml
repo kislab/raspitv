@@ -67,6 +67,11 @@ Canvas {
         } else if (name === "power") {
             g.beginPath(); g.arc(x, y + 0.1 * r, 0.8 * r, -Math.PI / 2 + 0.55, -Math.PI / 2 - 0.55 + 2 * Math.PI); g.stroke()
             line(x, y - 0.95 * r, x, y - 0.1 * r)
+        } else if (name === "moon") {  // Sleep-Timer: Mondsichel
+            g.beginPath(); g.arc(x, y, 0.8 * r, 0, 2 * Math.PI); g.fill()
+            g.globalCompositeOperation = "destination-out"
+            g.beginPath(); g.arc(x + 0.42 * r, y - 0.3 * r, 0.68 * r, 0, 2 * Math.PI); g.fill()
+            g.globalCompositeOperation = "source-over"
         } else if (name === "info") {
             g.beginPath(); g.arc(x, y, 0.9 * r, 0, 2 * Math.PI); g.stroke()
             line(x, y - 0.05 * r, x, y + 0.45 * r)

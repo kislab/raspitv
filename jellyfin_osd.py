@@ -172,6 +172,18 @@ def volume(value, muted):
     return out
 
 
+def toast(message):
+    """Hinweis oben in der Mitte (z. B. Sleep-Timer) – wie in RaspiTV (qml/Toast.qml) und in Netflix & Co."""
+    u = 24
+    size = 26
+    w = min(W - 8 * u, len(message) * size * 0.5 + 3 * u)
+    h = 2.6 * u
+    x, y = (W - w) / 2, 3 * u
+    return [shape(rounded(x, y + 0.3 * u, w, h, h / 2), (0, 0, 0), 0.3),
+            shape(rounded(x, y, w, h, h / 2), (20, 20, 28), 1.0),
+            text(W / 2, y + h / 2, message, size, align=5, bold=True, shadow=False)]
+
+
 def track_label(track):
     lang = (track.get("lang") or "").lower()
     names = {"de": "Deutsch", "ger": "Deutsch", "deu": "Deutsch", "en": "Englisch", "eng": "Englisch",

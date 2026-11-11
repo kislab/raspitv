@@ -27,7 +27,13 @@ DEFAULTS = {
     "jellyfin_device": "",   # Geräte-ID von RaspiTV gegenüber Jellyfin
     "audio_auto": True,      # neue Bluetooth-/USB-Audiogeräte automatisch verwenden
     "audio_output": "",      # zuletzt selbst gewählter Ausgang (node.name) – zurück dorthin, wenn ein Gerät geht
+    "saver_min": 10,         # Bildschirmschoner nach so vielen Minuten ohne Tastendruck (0 = aus)
+    "screen_off_min": 30,    # Bildschirm ausschalten nach so vielen Minuten ohne Tastendruck (0 = nie)
 }
+
+SLEEP_TIMES = [0, 15, 30, 45, 60, 90, 120]    # Sleep-Timer (Minuten, 0 = aus)
+SAVER_TIMES = [0, 2, 5, 10, 15, 30]          # Bildschirmschoner
+SCREEN_OFF_TIMES = [0, 15, 30, 60, 120]      # Bildschirm aus
 
 
 # Diese Einstellungen gehören dem jeweiligen Konto, alle anderen gelten für das ganze Gerät
@@ -305,6 +311,36 @@ def set_audio_output(output_id, sound=True):
 
 
 # ---------- Updates (GitHub) ----------
+
+# ---------- Bildschirm aus/an ----------
+
+_screens = {}  # ausgeschaltete Ausgänge -> Modus zum Wiedereinschalten ("1920x1080@60.000000")
+
+
+def screen_power(on):
+    """Bildschirm aus- bzw. wieder einschalten. Ohne Bild geht der Fernseher/Monitor in den Ruhezustand.
+    (labwc schaltet über wlr-randr; wlopm/DPMS funktioniert dort nicht.) Gibt True zurück, wenn es geklappt hat."""
+    try:
+        if not on:
+            outputs = json.loads(subprocess.run(["wlr-randr", "--json"], capture_output=True, text=True,
+                                                timeout=5).stdout or "[]")
+            ok = False
+            for out in outputs:
+                if not out.get("enabled"):
+                    continue
+                mode = next((m for m in out.get("modes", []) if m.get("current")), None)
+                _screens[out["name"]] = f"{mode['width']}x{mode['height']}@{mode['refresh']:f}" if mode else ""
+                ok = subprocess.run(["wlr-randr", "--output", out["name"], "--off"], timeout=5).returncode == 0 or ok
+            return ok
+        ok = True
+        for name, mode in list(_screens.items()):
+            args = ["wlr-randr", "--output", name, "--on"] + (["--mode", mode] if mode else [])
+            ok = subprocess.run(args, timeout=5).returncode == 0 and ok
+            _screens.pop(name, None)
+        return ok
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return False
+
 
 def _git(*args, timeout=30):
     return subprocess.run(["git", "-C", str(ROOT), *args], capture_output=True, text=True, timeout=timeout)
