@@ -80,26 +80,84 @@ def autostart_enabled():
     return AUTOSTART.exists()
 
 
+LABWC = CONFIG_HOME / "labwc"
+LABWC_AUTOSTART = LABWC / "autostart"
+LABWC_BACKUP = LABWC / "autostart.raspitv-backup"
+LABWC_RC = LABWC / "rc.xml"
+MARK = "# RaspiTV-Startbild"
+RULE_BEGIN, RULE_END = "<!-- RaspiTV-Startbild -->", "<!-- /RaspiTV-Startbild -->"
+RULE = (f"  {RULE_BEGIN}\n  <windowRules>\n    <windowRule identifier=\"raspitv-splash\">\n"
+        f"      <action name=\"ToggleAlwaysOnTop\"/>\n    </windowRule>\n  </windowRules>\n  {RULE_END}\n")
+
+
+def _write_if_changed(path, text):
+    if not path.exists() or path.read_text(encoding="utf-8") != text:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+        return True
+    return False
+
+
+def _set_boot_splash(enabled):
+    """Startbild schon beim Start der Desktop-Sitzung (labwc), noch bevor Desktop und Leiste erscheinen.
+
+    ~/.config/labwc/autostart ersetzt das System-Autostart (/etc/xdg/labwc/autostart): es zeigt erst das
+    Startbild und ruft dann das bisherige Autostart auf. Eine Fensterregel in rc.xml hält das Startbild
+    über allen Fenstern (auch über dem Terminal), bis RaspiTV zu sehen ist.
+    """
+    ours = LABWC_AUTOSTART.exists() and MARK in LABWC_AUTOSTART.read_text(encoding="utf-8", errors="replace")
+    rc = LABWC_RC.read_text(encoding="utf-8") if LABWC_RC.exists() else ""
+    rc_clean = re.sub(rf"[ \t]*{re.escape(RULE_BEGIN)}.*?{re.escape(RULE_END)}\n?", "", rc, flags=re.S)
+    changed = False
+    if not enabled:
+        if ours:
+            LABWC_AUTOSTART.unlink()
+            if LABWC_BACKUP.exists():
+                LABWC_BACKUP.rename(LABWC_AUTOSTART)
+        if rc_clean != rc:
+            LABWC_RC.write_text(rc_clean, encoding="utf-8")
+            changed = True
+    else:
+        if LABWC_AUTOSTART.exists() and not ours:
+            LABWC_AUTOSTART.rename(LABWC_BACKUP)  # eigenes Autostart des Benutzers behalten
+        previous = LABWC_BACKUP if LABWC_BACKUP.exists() else Path("/etc/xdg/labwc/autostart")
+        _write_if_changed(LABWC_AUTOSTART, (
+            f"{MARK}: von RaspiTV angelegt, beim Ausschalten des Autostarts/Deinstallieren wieder entfernt.\n"
+            "# Erst das Startbild zeigen, dann (sobald es zu sehen ist, höchstens 3 s) der normale Desktop-Start.\n"
+            'shown="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/raspitv-splash-shown"; rm -f "$shown"; i=0\n'
+            f"python3 '{ROOT}/splash.py' &\n"
+            'while [ ! -e "$shown" ] && [ $i -lt 30 ]; do sleep 0.1; i=$((i+1)); done\n'
+            f". '{previous}'\n"
+        ))
+        if not rc:
+            rc = '<?xml version="1.0"?>\n<openbox_config xmlns="http://openbox.org/3.4/rc">\n</openbox_config>\n'
+            rc_clean = rc
+        if "</openbox_config>" in rc_clean:
+            new = rc_clean.replace("</openbox_config>", RULE + "</openbox_config>", 1)
+            changed = _write_if_changed(LABWC_RC, new)
+    if changed:
+        subprocess.run(["pkill", "-HUP", "-x", "labwc"], check=False)  # Regeln neu laden
+
+
 def set_autostart(enabled):
     """Legt den Autostart-Eintrag an (Terminal öffnen, darin RaspiTV laden) oder entfernt ihn."""
+    _set_boot_splash(enabled)
     if not enabled:
         AUTOSTART.unlink(missing_ok=True)
         return
-    AUTOSTART.parent.mkdir(parents=True, exist_ok=True)
-    text = (
+    _write_if_changed(AUTOSTART, (
         "[Desktop Entry]\n"
         "Type=Application\n"
         "Name=RaspiTV (Terminal)\n"
         "Comment=Öffnet ein Terminal und startet darin RaspiTV\n"
         "# Nach dem Beenden von RaspiTV bleibt das Terminal mit einer Shell offen.\n"
-        # Zuerst das Startbild (deckt Desktop und Terminal ab, bis RaspiTV zu sehen ist), dann die neueste
-        # Version von GitHub holen (ohne Netz geht es mit der alten weiter) und RaspiTV starten
-        f'Exec=lxterminal --title=RaspiTV -e bash -c "cd {ROOT} && (python3 splash.py &); git pull --ff-only || true; python3 raspitv.py; exec bash"\n'
+        # Startbild (läuft meist schon seit dem labwc-Autostart), über das Startbild die neueste Version von
+        # GitHub holen (ohne Netz geht es mit der alten weiter), RaspiTV starten; endet RaspiTV, Startbild schließen
+        f'Exec=lxterminal --title=RaspiTV -e bash -c "cd {ROOT} && (python3 splash.py &); python3 splash.py --update; '
+        'python3 raspitv.py; python3 splash.py --done; exec bash"\n'
         "Icon=video-display\n"
         "Terminal=false\n"
-    )
-    if not AUTOSTART.exists() or AUTOSTART.read_text(encoding="utf-8") != text:
-        AUTOSTART.write_text(text, encoding="utf-8")
+    ))
 
 
 # ---------- Lautstärke (PipeWire) ----------

@@ -45,8 +45,9 @@ curl -fsSL https://raw.githubusercontent.com/kislab/raspitv/main/install.sh | ba
 Das lädt RaspiTV nach `~/raspitv`, installiert fehlende Pakete (`python3-pyqt5`, Qt Quick, `chromium`,
 `libwidevinecdm0` … – fragt dafür nach dem sudo-Passwort) und legt RaspiTV als Programm an:
 Symbol auf dem Desktop, Eintrag im Startmenü (Unterhaltung) und Autostart beim Hochfahren
-(Terminal öffnet sich und lädt RaspiTV; ein Startbild mit dem RaspiTV-Logo – `splash.py` – deckt Desktop und
-Terminal ab, bis RaspiTV zu sehen ist). Ohne Autostart: `… | bash -s -- --no-autostart`.
+(Terminal öffnet sich und lädt RaspiTV). Beim Hochfahren ist der Desktop nicht zu sehen: ein Startbild mit dem
+RaspiTV-Logo (`splash.py`, gestartet über `~/.config/labwc/autostart` noch vor Desktop und Leiste, per Fensterregel
+in `~/.config/labwc/rc.xml` immer oben) zeigt „Starte …“, „Suche nach Updates …“ und bleibt, bis RaspiTV zu sehen ist. Ohne Autostart: `… | bash -s -- --no-autostart`.
 Derselbe Befehl aktualisiert eine bestehende Installation.
 
 Der Installer richtet außerdem das **RaspiTV-Bootbild** ein (Logo statt Regenbogen und Raspberry-Pi-Bild,

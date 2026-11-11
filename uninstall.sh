@@ -58,7 +58,7 @@ trap 'rm -f "$SELF"' EXIT  # die Kopie in /tmp aufräumen
 echo
 echo "RaspiTV wird vollständig entfernt:"
 echo "  • Programm-Ordner $DIR"
-echo "  • Autostart, Startmenü-Eintrag, Desktop-Symbole"
+echo "  • Autostart (auch das Startbild beim Hochfahren), Startmenü-Eintrag, Desktop-Symbole"
 echo "  • Bootbild (wieder das Original), Bluetooth-Einstellung (wieder das Original)"
 echo "  • von RaspiTV installierte Pakete"
 echo "  • Einstellungen, Konten und Logins (Netflix, Disney+, Prime, Jellyfin …)"
@@ -78,7 +78,9 @@ PACKAGES="$(cat "$CONFIG/raspitv/installed-packages" 2>/dev/null | tr '\n' ' ')"
 [ -n "${PACKAGES// /}" ] || PACKAGES="$DEFAULT_PACKAGES"
 
 # 3. Einträge im Benutzerkonto
-say "Entferne Autostart, Startmenü-Eintrag und Desktop-Symbole"
+say "Entferne Autostart, Startbild, Startmenü-Eintrag und Desktop-Symbole"
+# Startbild beim Sitzungsstart: labwc-Autostart und Fensterregel zurücknehmen (vorheriges Autostart wiederherstellen)
+python3 -c "import sys; sys.path.insert(0, sys.argv[1]); import settings; settings.set_autostart(False)" "$DIR" || true
 rm -f "$CONFIG/autostart/raspitv.desktop" \
       "$DATA/applications/raspitv.desktop" \
       "$DESKTOP_DIR/RaspiTV.desktop" \
