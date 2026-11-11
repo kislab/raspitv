@@ -101,4 +101,10 @@ if [ -f "$BTCONF" ] && ! grep -q '^Privacy *= *device' "$BTCONF"; then
   sudo systemctl restart bluetooth || true
 fi
 
+# 7. Neustart/Ausschalten aus den Einstellungen ohne Passwort (auch wenn z. B. eine SSH-Sitzung offen ist)
+if [ ! -f /etc/polkit-1/rules.d/50-raspitv-power.rules ]; then
+  say "Erlaube Neustart und Ausschalten aus RaspiTV"
+  sudo "$DIR/boot/install-power-rule.sh" "$USER"
+fi
+
 say "Fertig! RaspiTV startest du über das Desktop-Symbol oder das Startmenü (Unterhaltung → RaspiTV)."

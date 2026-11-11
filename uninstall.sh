@@ -8,6 +8,7 @@
 #   - Autostart, Startmenü-Eintrag und Desktop-Symbole entfernen
 #   - Bootbild: vorheriges Plymouth-Thema, cmdline.txt und config.txt wie vorher
 #   - Bluetooth: /etc/bluetooth/main.conf aus der Sicherung (Privacy-Einstellung)
+#   - Regel für Neustart/Ausschalten ohne Passwort (/etc/polkit-1/rules.d/50-raspitv-power.rules)
 #   - Pakete, die RaspiTV nachinstalliert hat (nicht Chromium, git usw., die schon da waren)
 #   - Einstellungen, Konten und Logins (Netflix, Disney+, Jellyfin …) sowie den Ordner ~/raspitv
 # Gekoppelte Bluetooth-Geräte (z. B. die Fernbedienung) und WLAN-Verbindungen bleiben erhalten.
@@ -106,6 +107,8 @@ if sudo -v; then
     sudo sed -i '/^Privacy = device$/d' "$BTCONF"
     sudo systemctl restart bluetooth || true
   fi
+
+  sudo "$DIR/boot/install-power-rule.sh" --remove || warn "Regel für Neustart/Ausschalten blieb bestehen"
 
   INSTALLED=""
   for p in $PACKAGES; do

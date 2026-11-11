@@ -491,9 +491,26 @@ class Home(AccountsUI, JellyfinUI, QObject):
         self.dialog = {"text": question, "buttons": [("Abbrechen", self.close_dialog), (label, action)], "index": 0}
 
     def system(self, label, verb):
+        """Neu starten / Ausschalten. Scheitert es (z. B. fehlt die Freigabe aus install.sh, dann will das
+        System ein Passwort), eine Meldung zeigen statt still nichts zu tun."""
         def run():
             self.dialog = {"text": f"{label} …", "buttons": [], "index": 0}
-            subprocess.Popen(["systemctl", verb])
+
+            def work():
+                try:
+                    r = subprocess.run(["systemctl", verb, "--no-ask-password"], capture_output=True, text=True, timeout=20)
+                    return r.returncode, (r.stderr or r.stdout).strip()
+                except (OSError, subprocess.SubprocessError) as error:
+                    return 1, str(error)
+
+            def done(result):
+                code, out = result
+                if code != 0:
+                    print(f"systemctl {verb}: {out}", flush=True)
+                    self.notice(f"{label} ging nicht", None)
+                    self.dialog["sub"] = ("Es fehlt die Freigabe – einmal im Terminal ausführen: "
+                                          "sudo ~/raspitv/boot/install-power-rule.sh")
+            self.run_bg(work, done)
         self.confirm(f"{label}?", label, run)
 
     def tick(self):
