@@ -6,11 +6,23 @@
 (() => {
   if (window.top !== window || window.TV) return;
 
-  const FOCUSABLE = [
+  const FOCUSABLE_LIST = [
     "a[href]", "button", "input:not([type=hidden])", "select", "textarea",
     "[role=button]", "[role=link]", "[role=menuitem]", "[role=tab]", "[role=checkbox]",
     "[tabindex]:not([tabindex='-1'])",
-  ].join(",");
+  ];
+  const FOCUSABLE = FOCUSABLE_LIST.join(",");
+  /** Wählbare Elemente; TV.site.exclude (Selektor) wird schon in der Abfrage ausgefiltert – auf großen
+   *  Seiten (Song-Listen mit je 10 Knöpfen pro Zeile) spart das Hunderte Messungen pro Tastendruck. */
+  let excludeFor = null, focusableSel = FOCUSABLE;
+  function focusables(scope) {
+    const ex = TV.site.exclude;
+    if (ex !== excludeFor) {
+      excludeFor = ex;
+      focusableSel = ex ? FOCUSABLE_LIST.map((s) => `${s}:not(${ex})`).join(",") : FOCUSABLE;
+    }
+    return scope.querySelectorAll(focusableSel);
+  }
   const TEXT_TYPES = new Set(["text", "email", "password", "search", "tel", "url", "number"]);
 
   const TV = (window.TV = {
@@ -22,6 +34,10 @@
       inPlayer: () => false,      // läuft gerade ein Video im Vollbild?
       playerKey: () => false,     // Taste im Player behandeln; false = Seite selbst entscheiden lassen
       move: () => false,          // Rand einer Reihe erreicht (z. B. Karussell weiterblättern)
+      moveFirst: () => false,     // vor der Suche nach dem nächsten Element: true = Seite hat selbst bewegt
+      exclude: "",                // Selektor: nie wählbar (wie skip, aber schon in der Abfrage – schneller)
+      scrollFocus: true,          // gewähltes Element sanft zur Bildmitte scrollen (sonst nur reveal())
+      nativeFocus: true,          // auch den Browser-Fokus setzen (kostet auf großen Seiten Stil-Neuberechnung)
       skip: () => false,          // Element nicht anwählen (z. B. kleine Info-Links)
       reveal: () => {},
       takeover: () => false,      // eigene Oberfläche der Seite aktiv? Dann bekommt sie alle Tasten
@@ -75,7 +91,7 @@
 
   function candidates() {
     const scope = currentScope() || document;
-    const list = [...scope.querySelectorAll(FOCUSABLE)].filter(selectable);
+    const list = [...focusables(scope)].filter(selectable);
     // Verschachtelte Elemente: das äußere nur verwerfen, wenn das innere es fast ganz ausfüllt
     // (Link um einen Knopf). Eine Karte mit kleinem "+"-Knopf darin bleibt selbst wählbar.
     const area = (el) => { const r = el.getBoundingClientRect(); return r.width * r.height; };
@@ -87,11 +103,12 @@
     TV.current?.classList.remove("tv-focus");
     TV.current = el;
     el.classList.add("tv-focus");
-    el.focus({ preventScroll: true });
+    if (TV.site.nativeFocus) el.focus({ preventScroll: true });
     kickRing();
     TV.site.reveal(el);
     // Elemente im oberen Seitenbereich: ganz nach oben scrollen, damit Kopfzeile und Banner
     // vollständig zu sehen sind; weiter unten das gewählte Element mittig halten.
+    if (!TV.site.scrollFocus) return;
     const r = el.getBoundingClientRect();
     if (r.bottom + scrollY < innerHeight - 40) window.scrollTo({ top: 0, behavior: "smooth" });
     else el.scrollIntoView({ block: "center", inline: "nearest", behavior: "smooth" });
@@ -161,24 +178,29 @@
     return best;
   }
 
+  // Nächstes Element in einer Richtung. Erst nur nach Lage bewerten (billig: getBoundingClientRect),
+  // dann die besten der Reihe nach auf echte Sichtbarkeit prüfen (teuer: elementFromPoint) – auf großen
+  // Seiten (Playlist mit 100 Zeilen) sonst Hunderte Trefferprüfungen pro Tastendruck.
   function move(dir) {
-    const list = candidates();
-    if (!list.length) return;
+    const scope = currentScope() || document;
+    const all = [...focusables(scope)];
+    if (!all.length) return;
     let from = TV.current;
-    if (!from || !from.isConnected || !list.includes(from)) {
+    if (!from || !from.isConnected || !scope.contains(from) || !selectable(from)) {
       // Seiten wie Netflix tauschen Elemente beim Neuzeichnen aus: dann von der
       // letzten bekannten Position aus weitergehen statt von vorn zu beginnen.
-      if (!lastRect) return focus(initial(list));
+      if (!lastRect) return focus(initial(candidates()));
       from = null;
     }
-
+    if (from && TV.site.moveFirst(dir, from)) return;
     const horizontal = dir === "left" || dir === "right";
     const sign = dir === "right" || dir === "down" ? 1 : -1;
     const c = from ? from.getBoundingClientRect() : lastRect;
-    let best = null, bestScore = Infinity, bestAligned = false;
-    for (const el of list) {
+    const ranked = [];
+    for (const el of all) {
       if (el === from) continue;
       const r = el.getBoundingClientRect();
+      if (r.width < 8 || r.height < 8) continue;
       // Abstand in Bewegungsrichtung (Mittelpunkt muss klar dahinter liegen)
       const ahead = horizontal
         ? sign * (r.left + r.width / 2 - (c.left + c.width / 2))
@@ -192,18 +214,29 @@
         ? Math.max(0, r.top - c.bottom, c.top - r.bottom)
         : Math.max(0, r.left - c.right, c.left - r.right);
       const aligned = offset === 0;
-      const score = gap + ahead * 0.1 + offset * (horizontal ? 6 : 2);
-      // Links/rechts bleibt streng in der Reihe; hoch/runter nimmt das insgesamt nächste Element.
-      const better = horizontal
-        ? (aligned && !bestAligned) || (aligned === bestAligned && score < bestScore)
-        : score < bestScore;
-      if (better) {
-        best = el; bestScore = score; bestAligned = aligned;
-      }
+      ranked.push({ el, r, aligned, score: gap + ahead * 0.1 + offset * (horizontal ? 6 : 2) });
+    }
+    // Links/rechts bleibt streng in der Reihe; hoch/runter nimmt das insgesamt nächste Element.
+    ranked.sort((a, b) => (horizontal && a.aligned !== b.aligned ? (a.aligned ? -1 : 1) : a.score - b.score));
+    let best = null;
+    for (const item of ranked) {
+      if (!selectable(item.el) || wrapsChild(item.el, item.r)) continue;
+      best = item;
+      break;
     }
     // Links/rechts bleibt in der Reihe: am Rand darf die Seite z. B. ein Karussell weiterblättern.
-    if (horizontal && !bestAligned && from && TV.site.move(dir, from)) return;
-    if (best) focus(best);
+    if (horizontal && !(best && best.aligned) && from && TV.site.move(dir, from)) return;
+    if (best) focus(best.el);
+  }
+
+  /** Äußeres Element (Link um einen Knopf), das ein wählbares inneres fast ganz ausfüllt? Dann das innere nehmen. */
+  function wrapsChild(el, r) {
+    const area = r.width * r.height;
+    for (const inner of el.querySelectorAll(FOCUSABLE)) {
+      const ri = inner.getBoundingClientRect();
+      if (ri.width * ri.height > 0.6 * area && selectable(inner)) return true;
+    }
+    return false;
   }
 
   function ok() {

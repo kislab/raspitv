@@ -14,10 +14,13 @@ Mediacenter für den Raspberry Pi 4 im Stil von Google TV – bedienbar mit der 
   Seitenleiste, Song-Zeilen sind ein Schritt, OK spielt den Song, Play/Pause steuert den Player der Seite, Zurück
   schließt Anmelde-/Abo-Dialoge. Für den Pi: keine Unschärfe-Effekte und Übergänge, Reihen außerhalb des Bildes
   werden nicht gezeichnet, die animierten „spielt gerade“-Balken stehen still (gemessen bei laufender Hörprobe:
-  ~14 % statt ~210 % CPU). Aussehen wie die TV-App: Leiste oben (Logo, Bereiche als Pillen, Anmelden rechts) statt Seitenleiste, Schrift in TV-Größe, keine
-  Player-Leiste – sobald etwas spielt, steht oben **Jetzt läuft** (Vollbild mit Cover, Fortschritt, ⏮ ⏯ ⏭ und Reihe „Als Nächstes“
-  aus der MusicKit-Warteschlange über `applemusic-main.js`; OK springt zum Titel). Anmelden: „Anmelden“ oben rechts; Text am besten
-  über die Handy-Fernbedienung tippen.
+  ~14 % statt ~210 % CPU). Angemeldet baut RaspiTV die Oberfläche komplett selbst (`applemusic-app.js/.css`): Apples Seite lädt nur
+  im Hintergrund (MusicKit spielt, Daten über dessen Schnittstelle – Brücke `applemusic-main.js`) und wird nicht gezeichnet.
+  Aussehen wie die TV-App: Pillen-Leiste (Suchen, Startseite, Neu, Radio, Mediathek, Jetzt läuft), Mediathek mit zweiter
+  Reihe, Album-/Playlist-Seiten mit 8 Zeilen, die beim Herunterblättern nachladen, Suche, Jetzt läuft mit „Als Nächstes“.
+  Ein gestarteter Titel öffnet direkt Jetzt läuft; Zurück führt zur vorigen Seite. Gemessen: ~60 ms Hauptthread pro Taste
+  in einer Playlist (vorher mit Apples Seite ~700 ms), Ruhe ~5 % CPU. Nicht angemeldet: Apples Seite im TV-Stil (Leiste oben,
+  „Anmelden“ oben rechts; Text am besten über die Handy-Fernbedienung tippen).
 - **Jellyfin** als eigene App in RaspiTV (`jellyfin.py`, `jellyfin_ui.py`, `qml/Jellyfin.qml`): Start (Weiterschauen,
   Nächste Folgen, Neu in …), Bibliotheken, Suche, Detailseite mit Staffeln/Folgen; Leiste oben (◀ ▶ wählen,
   ▼ in den Inhalt, ▲ zurück). Abspielen mit mpv: H.264 per Hardware-Dekoder direkt auf den Bildschirm

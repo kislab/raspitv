@@ -9,7 +9,7 @@
   if (!window.TV) return;
   document.documentElement.classList.add("tv-am");
 
-  const SKIP = [
+  const SKIP_LIST = [
     ".play-button",                 // Play-Knopf auf dem Cover (OK auf der Karte öffnet sie)
     ".contextual-menu__trigger",    // „…“-Menü
     ".more-button",
@@ -21,7 +21,11 @@
     ".native-cta__button",          // „In Musik öffnen“ (startet die App auf Mac/iPhone)
     "footer",                       // Rechtliches, Sprachwahl (würde auf Englisch umstellen)
     ".banner",                      // Abo-Werbung unten am Rand (fängt sonst den Fokus beim Navigieren)
-  ].join(",");
+    "[data-testid=delete-from-library-button]", // „Aus Mediathek löschen“ – nicht aus Versehen drücken
+  ];
+  const SKIP = SKIP_LIST.join(",");
+  // für tv.js: schon bei der Abfrage ausfiltern (das Element selbst und alles darin)
+  const EXCLUDE = SKIP_LIST.flatMap((sel) => [sel, `${sel} *`]).join(",");
 
   // Die Seite scrollt nicht das Fenster, sondern #scrollable-page: gewähltes Element dort sichtbar halten.
   /** Reihe „Als Nächstes“ seitlich verschieben, sodass die gewählte Karte ganz zu sehen ist. */
@@ -38,8 +42,29 @@
     list.style.transform = `translateX(${-next}px)`;
   }
 
+  // ---------- Lange Song-Listen schrittweise zeigen ----------
+  // Playlists mit 100+ Zeilen (je ~30 Elemente) machen jede Stil-Neuberechnung auf dem Pi teuer. Zuerst nur
+  // ROWS_STEP Zeilen zeigen, beim Herunterblättern kurz vor dem Ende die nächsten. Ausgeblendete Zeilen
+  // (display: none) kosten weder Stil noch Layout. Eine einzige Regel, deren Grenze verschoben wird.
+  const ROWS_STEP = 8;
+  let rowLimit = ROWS_STEP;
+  const rowStyle = document.createElement("style");
+  (document.head || document.documentElement).append(rowStyle);
+  function setRowLimit(n) {
+    rowLimit = n;
+    rowStyle.textContent = `html.tv-am .songs-list-row:nth-child(n+${n + 1} of .songs-list-row) { display: none !important; }`;
+  }
+  setRowLimit(ROWS_STEP);
+  function growRows(row) {
+    const rows = row.parentElement.querySelectorAll(":scope > .songs-list-row");
+    const index = Array.prototype.indexOf.call(rows, row);
+    if (index >= rowLimit - 3 && rows.length > rowLimit) setRowLimit(rowLimit + ROWS_STEP);
+  }
+
   function reveal(el) {
-    document.documentElement.classList.toggle("tv-am-noring", !!el.closest(".navigation, .tv-am-now__buttons"));
+    const row = el.closest(".songs-list-row");
+    if (row) growRows(row);
+    document.documentElement.classList.toggle("tv-am-noring", !!el.closest(".navigation, .tv-am-subnav, .tv-am-now__buttons"));
     if (el.closest(".tv-am-now__queue")) return scrollQueue(el);
     const page = document.getElementById("scrollable-page");
     if (!page || !page.contains(el)) return;
@@ -85,20 +110,9 @@
     return true;
   }
 
-  // ◀ am linken Rand des Inhalts: in die Seitenleiste (statt zu „Anmelden“ ganz unten); ▶ von dort zurück
+  // Rechts neben einer Song-Zeile ist nichts (sonst springt der Fokus quer über die Seite)
   function move(dir, from) {
-    const page = document.getElementById("scrollable-page");
-    const nav = document.querySelector(".navigation");
-    if (dir === "right" && from.closest(".songs-list-row")) return true; // rechts neben einer Zeile ist nichts
-    if (dir === "left" && page && page.contains(from)) {
-      const item = nav && (nav.querySelector(".navigation-item--selected a, a[aria-current]") || nav.querySelector(".navigation-item__link"));
-      if (item) return TV.focus(item), true;
-    }
-    if (dir === "right" && nav && nav.contains(from)) {
-      const first = TV.site.initial();
-      if (first) return TV.focus(first), true;
-    }
-    return false;
+    return dir === "right" && !!from.closest(".songs-list-row");
   }
 
   // Play/Pause der Fernbedienung: Knopf in der Player-Leiste der Seite
@@ -199,6 +213,61 @@
     if (hadFocus) TV.focus(list.firstElementChild || view.querySelector(".tv-am-now__play"));
   });
 
+
+  // ---------- Mediathek (angemeldet) ----------
+  // Apple hängt Mediathek und alle Playlists an die Seitenleiste – oben wäre das viel zu lang. Wie in der
+  // TV-App: oben nur eine Pille „Mediathek“; in der Mediathek eine zweite Reihe mit ihren Bereichen.
+  // Beide klicken Apples (versteckte) Links, damit die Seite ohne Neuladen wechselt.
+  const LIBRARY = [
+    ["Zuletzt hinzugefügt", "/library/recently-added"], ["Playlists", "/library/all-playlists"],
+    ["Künstler", "/library/artists"], ["Alben", "/library/albums"], ["Titel", "/library/songs"],
+    ["Musikvideos", "/library/music-videos"], ["Für dich", "/library/made-for-you"],
+  ];
+  let libItem = null, subNav = null;
+
+  function go(path) {
+    const link = [...document.querySelectorAll(".navigation a[href]")].find((a) => new URL(a.href, location.href).pathname.endsWith(path));
+    if (link) link.click();
+    else location.href = `/de${path}`;
+  }
+
+  function navLink(text, path, cls) {
+    const a = el("a", `navigation-item__link ${cls || ""}`, text);
+    a.href = "#";
+    a.addEventListener("click", (e) => { e.preventDefault(); e.stopImmediatePropagation(); closeNow(); go(path); }, true);
+    return a;
+  }
+
+  function updateLibrary() {
+    const hasLibrary = !!document.querySelector(".navigation-items--library");
+    const list = document.querySelector(".navigation-items--primary .navigation-items__list");
+    const inLibrary = location.pathname.includes("/library");
+    if (hasLibrary && list && !libItem?.isConnected) {
+      libItem = el("li", "navigation-item tv-am-lib-item");
+      libItem.append(navLink("Mediathek", "/library/recently-added"));
+      const now = list.querySelector(".tv-am-now-item");
+      list.insertBefore(libItem, now || null);
+    }
+    if (libItem) libItem.classList.toggle("tv-am-selected", inLibrary && !view);
+    document.documentElement.classList.toggle("tv-am-lib", hasLibrary && inLibrary);
+    const header = document.querySelector(".header");
+    if (hasLibrary && inLibrary && header && !subNav?.isConnected) {
+      subNav = el("div", "tv-am-subnav");
+      const ul = el("div", "tv-am-subnav__list");
+      for (const [text, path] of LIBRARY) ul.append(navLink(text, path, "tv-am-subnav__link"));
+      subNav.append(ul);
+      header.append(subNav);
+    }
+    if (subNav) {
+      for (const a of subNav.querySelectorAll("a")) {
+        const path = LIBRARY.find(([t]) => t === a.textContent)[1];
+        const here = location.pathname.replace(/\/$/, "");
+        a.classList.toggle("tv-am-selected", here.endsWith(path) ||
+          (path === "/library/all-playlists" && location.pathname.includes("/library/playlist/")));
+      }
+    }
+  }
+
   let navItem = null;   // „Jetzt läuft“ in der Leiste
   let view = null;      // Vollbild-Ansicht, solange offen
   let artUrl = "";
@@ -251,6 +320,8 @@
   }
 
   function update() {
+    if (window.TVAM_APP?.active) return; // eigene Oberfläche läuft (applemusic-app.js)
+    updateLibrary();
     const s = nowState();
     // Eintrag oben in der Leiste
     const list = document.querySelector(".navigation-items--primary .navigation-items__list");
@@ -291,7 +362,53 @@
   // Ansicht offen: jede halbe Sekunde (Fortschritt), sonst alle 1,5 s (nur der Eintrag in der Leiste)
   (function loop() { update(); setTimeout(loop, view ? 500 : 1500); })();
 
+  /** Album-/Playlist-Seite: „Wiedergabe“ bzw. „Hörprobe“ im Kopf */
+  function detailPlay() {
+    const header = document.querySelector("#scrollable-page .container-detail-header");
+    return header && [...header.querySelectorAll("button.click-action")].find((b) => b.textContent.trim());
+  }
+
+  // Neue Seite (Album, Playlist, Mediathek-Bereich …): wie in der TV-App aufs erste Element im Inhalt statt
+  // auf das, was zufällig an der alten Stelle liegt. Wartet bis zu 8 s, bis die Seite es zeigt.
+  let lastPath = location.pathname, pathFocusUntil = 0;
+  function checkPath() {
+    if (window.TVAM_APP?.active) return;
+    if (location.pathname !== lastPath) {
+      lastPath = location.pathname;
+      setRowLimit(ROWS_STEP); // neue Seite: wieder nur die ersten Zeilen
+      // über die Leiste oben gewechselt: Fokus bleibt in der Leiste
+      pathFocusUntil = TV.current?.isConnected && TV.current.closest(".header") ? 0 : Date.now() + 8000;
+    }
+    if (!pathFocusUntil || view || overlay()) return;
+    if (Date.now() > pathFocusUntil) { pathFocusUntil = 0; return; }
+    const page = document.getElementById("scrollable-page");
+    const target = detailPlay() || page?.querySelector(".product-lockup__link, .songs-list-row, main :is(a[href], button):not(footer *)");
+    if (target && target.getBoundingClientRect().height > 8) {
+      pathFocusUntil = 0;
+      TV.focus(target);
+    }
+  }
+  setInterval(checkPath, 300);
+
+  // Zwischen Leiste und Mediathek-Reihe: ▼ auf den gewählten Bereich, ▲ zurück auf „Mediathek“
+  function moveFirst(dir, from) {
+    if (!subNav?.isConnected || !document.documentElement.classList.contains("tv-am-lib")) return false;
+    if (dir === "down" && from.closest(".navigation")) {
+      const target = subNav.querySelector(".tv-am-selected") || subNav.querySelector("a");
+      return TV.focus(target), true;
+    }
+    if (dir === "up" && from.closest(".tv-am-subnav")) {
+      const pill = libItem?.querySelector("a");
+      return !!pill && (TV.focus(pill), true);
+    }
+    return false;
+  }
+
   Object.assign(TV.site, {
+    nativeFocus: false,
+    exclude: EXCLUDE,
+    scrollFocus: false, // reveal() scrollt den inneren Bereich – sofort und nur, wenn nötig // Apple-Seiten reagieren auf :focus mit teurer Stil-Neuberechnung; tv.js klickt ohnehin selbst
+    moveFirst,
     skip: (el) => !!el.closest(SKIP),
     scope: () => view || overlay(),
     back: () => closeNow() || back(),
@@ -299,9 +416,20 @@
     reveal,
     playPause,
     // erstes Element: Inhalt statt Seitenleiste
-    initial: () => view?.querySelector(".tv-am-now__play") || overlayStart() ||
+    initial: () => view?.querySelector(".tv-am-now__play") || overlayStart() || detailPlay() ||
       document.querySelector("#scrollable-page .product-lockup__link") ||
       document.querySelector("#scrollable-page main :is(a[href], button):not(footer *)") ||
       document.querySelector(".navigation-item--selected a, .navigation a[aria-current]"),
   });
+
+  // Angemeldet? Dann die eigene TV-Oberfläche starten (Apples Seite lädt nur noch im Hintergrund).
+  // MusicKit braucht nach dem Laden etwas; höchstens ~40 s lang nachfragen.
+  let tries = 0;
+  (function startApp() {
+    if (!window.TVAM_APP || window.TVAM_APP.active) return;
+    window.TVAM_APP.call("auth").then((info) => {
+      if (info.authorized) window.TVAM_APP.start(info);
+      else if (++tries < 40) setTimeout(startApp, 1000);
+    }).catch(() => { if (++tries < 40) setTimeout(startApp, 1000); });
+  })();
 })();

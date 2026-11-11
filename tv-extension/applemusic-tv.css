@@ -21,7 +21,8 @@ html.tv-am *, html.tv-am *::before, html.tv-am *::after {
 html.tv-am amp-ambient-video, html.tv-am .video-artwork__video, html.tv-am [class*=motion] video { display: none !important; }
 
 /* Reihen außerhalb des Bildschirms nicht zeichnen */
-html.tv-am .section, html.tv-am .shelf-grid { content-visibility: auto; contain-intrinsic-size: auto 420px; }
+/* nur die Karten-Reihen – virtuelle Listen (Mediathek: Playlists, Titel …) fielen damit auf Höhe 0 zusammen */
+html.tv-am .shelf-grid { content-visibility: auto; contain-intrinsic-size: auto 420px; }
 
 /* Bedien-Elemente, die mit der Fernbedienung nur stören: Pfeile der Reihen (Navigation läuft über
    die Pfeiltasten), „In Musik öffnen“ (startet die Mac-/iPhone-App) */
@@ -205,3 +206,27 @@ html.tv-am .horizontal-lockup__title, html.tv-am .horizontal-lockup__title * { f
 html.tv-am .horizontal-lockup [class*=description], html.tv-am .horizontal-lockup [class*=description] * { font-size: 15px !important; line-height: 1.35 !important; }
 html.tv-am .horizontal-lockup [class*=subtitle], html.tv-am .horizontal-lockup [class*=subtitle] * { font-size: 14px !important; }
 html.tv-am .horizontal-lockup .cloud-buttons, html.tv-am .horizontal-lockup amp-contextual-menu-button { display: none !important; }
+
+/* ---------- Mediathek (angemeldet) ---------- */
+/* Apples Mediathek- und Playlist-Einträge der Seitenleiste ausblenden – dafür „Mediathek“-Pille (applemusic-tv.js) */
+html.tv-am .navigation-items--library, html.tv-am .navigation-items--personalized, html.tv-am .navigation-items:not(.navigation-items--primary) { display: none !important; }
+html.tv-am .tv-am-selected:not(.tv-focus), html.tv-am .tv-am-lib-item.tv-am-selected .navigation-item__link:not(.tv-focus) { background: #5a5a5e !important; color: #fff !important; }
+/* in der Mediathek ist Apples „gewählt“-Markierung (Startseite o. ä.) falsch */
+html.tv-am.tv-am-lib .navigation-items--primary .navigation-item--selected .navigation-item__link:not(.tv-focus) { background: none !important; color: rgba(255,255,255,.65) !important; }
+/* zweite Reihe in der Mediathek */
+html.tv-am.tv-am-lib .app-container { grid-template-rows: 172px minmax(0, 1fr) !important; }
+html.tv-am.tv-am-lib .header { height: 172px !important; }
+html.tv-am .tv-am-subnav { position: absolute; left: 0; right: 0; top: 104px; display: flex; justify-content: center; }
+html.tv-am:not(.tv-am-lib) .tv-am-subnav { display: none; }
+html.tv-am .tv-am-subnav__list { display: flex; gap: 6px; }
+html.tv-am .tv-am-subnav__link {
+  padding: 8px 20px; border-radius: 999px; font-size: 16px !important; font-weight: 600;
+  color: rgba(255,255,255,.65); text-decoration: none; background: none;
+}
+html.tv-am .tv-am-subnav__link.tv-focus { background: #fff !important; color: #1c1c1e !important; }
+html.tv-am.tv-am-lib .tv-am-now { top: 172px; }
+/* Mediathek-Karten: der Link liegt in Apples Hover-Ebene (opacity 0) – tv.js hielte ihn für unsichtbar.
+   Ebene sichtbar machen, ihre Maus-Knöpfe (Play, „…“) und den Abdunkel-Verlauf aber nicht zeigen. */
+html.tv-am .product-lockup__controls { opacity: 1 !important; background: none !important; }
+html.tv-am .product-lockup__controls :is(.play-button, .interactive-play-button, amp-contextual-menu-button, .contextual-menu__trigger) { visibility: hidden !important; }
+html.tv-am .product-lockup__controls::before, html.tv-am .product-lockup__controls::after { display: none !important; }

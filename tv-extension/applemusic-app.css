@@ -1,0 +1,153 @@
+/* Apple Music: eigene TV-Oberfläche (applemusic-app.js). Aussehen wie der bisherige TV-Stil von Apples Seite.
+   Werte in CSS-Pixeln; der Player vergrößert die Seite zusätzlich um 1,25 (apps.json "scale"). */
+
+/* Apples Seite lädt im Hintergrund weiter, wird aber nicht gezeichnet (spart dem Pi fast alles) */
+html.tvam-app body { content-visibility: hidden !important; }
+html.tvam-app, html.tvam-app body { overflow: hidden !important; background: #1f1f1f !important; }
+
+.tvam {
+  position: fixed; inset: 0; z-index: 2147483000; overflow: clip;
+  background: #1f1f1f; color: #fff;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro", "SF Pro Text", "Helvetica Neue", "Nunito Sans", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+.tvam button { font: inherit; color: inherit; border: none; background: none; padding: 0; margin: 0; text-align: left; outline: none !important; }
+.tvam img { display: block; }
+
+/* ---------- Leiste oben ---------- */
+.tvam-header { position: absolute; left: 0; right: 0; top: 0; height: 104px; display: flex; align-items: center; padding: 0 56px; z-index: 2; background: #1f1f1f; }
+.tvam-header::after { content: ""; position: absolute; left: 0; right: 0; top: 100%; height: 30px; pointer-events: none; background: linear-gradient(#1f1f1f, rgba(31,31,31,0)); }
+.tvam--lib .tvam-header::after { display: none; }
+.tvam-logo { flex: 0 0 240px; height: 48px; display: flex; align-items: center; }
+.tvam-logo svg { height: 30px; width: auto; fill: #fff; }
+.tvam-right { flex: 0 0 240px; }
+.tvam-pills { flex: 1 1 auto; display: flex; justify-content: center; gap: 4px; }
+.tvam-pills { margin: 0 auto; }
+.tvam-header .tvam-pills { flex: 0 1 auto; padding: 6px; border-radius: 999px; background: #2c2c2e; margin-left: auto; margin-right: auto; }
+.tvam-pill {
+  display: flex !important; align-items: center; gap: 8px; padding: 9px 22px !important; border-radius: 999px;
+  font-size: 17px; font-weight: 600; color: rgba(255,255,255,.65) !important; white-space: nowrap;
+}
+.tvam-pill[hidden] { display: none !important; }
+.tvam-pill__icon { width: 17px; height: 17px; color: #4fb3ff; }
+.tvam-pill.is-selected { background: #5a5a5e !important; color: #fff !important; }
+.tvam-pill.tv-focus { background: #fff !important; color: #1c1c1e !important; }
+.tvam-pill.tv-focus .tvam-pill__icon { color: #1c1c1e; }
+.tvam-dot { width: 8px; height: 8px; border-radius: 50%; background: #fa2d48; }
+
+/* Mediathek: zweite Reihe */
+.tvam-subnav { position: absolute; left: 0; right: 0; top: 104px; height: 64px; display: none; justify-content: center; align-items: flex-start; gap: 6px; z-index: 2; background: #1f1f1f; }
+.tvam--lib .tvam-subnav { display: flex; }
+.tvam-subnav::after { content: ""; position: absolute; left: 0; right: 0; top: 100%; height: 30px; pointer-events: none; background: linear-gradient(#1f1f1f, rgba(31,31,31,0)); }
+.tvam-sub { padding: 8px 20px !important; border-radius: 999px; font-size: 16px; font-weight: 600; color: rgba(255,255,255,.65) !important; }
+.tvam-sub.is-selected { background: #5a5a5e !important; color: #fff !important; }
+.tvam-sub.tv-focus { background: #fff !important; color: #1c1c1e !important; }
+
+/* ---------- Seite ---------- */
+.tvam-page { position: absolute; left: 0; right: 0; top: 104px; bottom: 0; overflow: clip; }
+.tvam--lib .tvam-page { top: 168px; }
+.tvam-scroll { padding: 30px 56px 80px; will-change: transform; }
+.tvam-scroll--full { position: absolute; inset: 0; padding: 0; transform: none !important; }
+.tvam-loading, .tvam-empty, .tvam-error { padding: 60px 0; text-align: center; font-size: 20px; color: rgba(255,255,255,.55); }
+.tvam-error { color: #f28b82; }
+.tvam-page__title { font-size: 34px; font-weight: 700; margin: 0 0 20px; }
+
+/* Reihen */
+.tvam-shelf { margin-bottom: 34px; }
+.tvam-shelf__title { font-size: 24px; font-weight: 700; margin: 0 0 14px; line-height: 1.25; }
+.tvam-clip { overflow: clip; overflow-clip-margin: 16px; margin: 0 -56px; padding: 0 56px; }
+.tvam-row { display: flex; gap: 22px; padding: 10px 0 12px; }
+
+/* Karten */
+.tvam-card { flex: 0 0 auto; width: 210px; display: block !important; }
+.tvam-card__img { width: 210px; height: 210px; border-radius: 10px; object-fit: cover; background: #333; }
+.tvam-card__img.is-empty { background: linear-gradient(135deg, #fa2d48, #a01e3b); }
+.tvam-card__title { margin-top: 10px; font-size: 17px; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tvam-card__sub { margin-top: 2px; font-size: 15px; line-height: 1.3; color: rgba(255,255,255,.6); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tvam-card.tv-focus .tvam-card__img { box-shadow: 0 16px 36px rgba(0,0,0,.6); }
+/* große Karten oben (Text über dem Bild, wie bei Apple) */
+.tvam-card--wide { width: 560px; }
+.tvam-card--wide .tvam-card__img { width: 560px; height: 315px; }
+.tvam-card__eyebrow { font-size: 14px; font-weight: 600; letter-spacing: .02em; text-transform: uppercase; color: rgba(255,255,255,.6); }
+.tvam-card__headline { margin-top: 4px; font-size: 21px; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tvam-card--wide .tvam-card__sub { margin: 0 0 10px; font-size: 18px; }
+.tvam-card--wide .tvam-card__headline:last-of-type { margin-bottom: 10px; }
+/* Raster (Mediathek) */
+.tvam-grid { display: flex; flex-wrap: wrap; gap: 30px 22px; }
+.tvam-card--grid { width: 200px; }
+.tvam-card--grid .tvam-card__img { width: 200px; height: 200px; }
+/* Song-Reihe: 4 Zeilen, spaltenweise */
+.tvam-shelf--songs .tvam-row { display: grid; grid-template-rows: repeat(4, auto); grid-auto-flow: column; grid-auto-columns: 400px; gap: 4px 22px; }
+.tvam-song { display: flex !important; align-items: center; gap: 14px; padding: 6px 8px !important; border-radius: 10px; width: 400px; box-sizing: border-box; }
+.tvam-song__img { width: 64px; height: 64px; border-radius: 6px; object-fit: cover; background: #333; flex: 0 0 64px; }
+.tvam-song__text { min-width: 0; }
+.tvam-song__title { font-size: 18px; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tvam-song__sub { font-size: 15px; line-height: 1.3; color: rgba(255,255,255,.6); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tvam-song.tv-focus { background: rgba(255,255,255,.14) !important; }
+
+/* ---------- Album / Playlist ---------- */
+.tvam-detail { display: flex; gap: 40px; align-items: flex-end; margin-bottom: 30px; }
+.tvam-detail__art { width: 300px; height: 300px; border-radius: 12px; object-fit: cover; background: #333; box-shadow: 0 20px 50px rgba(0,0,0,.5); flex: 0 0 300px; }
+.tvam-detail__art.is-empty { background: linear-gradient(135deg, #fa2d48, #a01e3b); }
+.tvam-detail__info { min-width: 0; padding-bottom: 6px; }
+.tvam-detail__title { font-size: 34px; font-weight: 700; line-height: 1.2; }
+.tvam-detail__by { margin-top: 4px; font-size: 26px; color: #fa586a; }
+.tvam-detail__meta { margin-top: 8px; font-size: 15px; color: rgba(255,255,255,.6); }
+.tvam-detail__note { margin-top: 14px; max-width: 760px; font-size: 16px; line-height: 1.4; color: rgba(255,255,255,.75);
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.tvam-detail__buttons { margin-top: 22px; display: flex; gap: 14px; }
+.tvam-btn { display: flex !important; align-items: center; gap: 8px; padding: 10px 24px !important; border-radius: 999px; font-size: 17px; font-weight: 600;
+  background: rgba(255,255,255,.14) !important; }
+.tvam-btn svg { width: 18px; height: 18px; }
+.tvam-btn--primary { background: #fff !important; color: #1c1c1e !important; }
+.tvam-btn.tv-focus { background: #fff !important; color: #1c1c1e !important; transform: scale(1.06); box-shadow: 0 0 0 4px rgba(255,255,255,.35); }
+.tvam-btn--primary.tv-focus { box-shadow: 0 0 0 4px rgba(255,255,255,.45); }
+
+/* Titel-Liste */
+.tvam-tracks { display: flex; flex-direction: column; }
+.tvam-track { display: flex !important; align-items: center; gap: 16px; min-height: 62px; padding: 6px 16px !important; border-radius: 10px;
+  border-bottom: 1px solid rgba(255,255,255,.08) !important; box-sizing: border-box; }
+.tvam-track__no { flex: 0 0 28px; font-size: 17px; color: rgba(255,255,255,.55); text-align: right; }
+.tvam-track__img { width: 48px; height: 48px; border-radius: 5px; object-fit: cover; background: #333; flex: 0 0 48px; }
+.tvam-track__text { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+.tvam-track__title { font-size: 18px; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tvam-track__sub { font-size: 15px; line-height: 1.3; color: rgba(255,255,255,.6); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tvam-track__time { flex: 0 0 auto; font-size: 17px; color: rgba(255,255,255,.6); }
+.tvam-track.tv-focus { background: rgba(255,255,255,.14) !important; border-bottom-color: transparent !important; }
+
+/* ---------- Suche ---------- */
+.tvam-search { display: flex; align-items: center; gap: 14px; max-width: 900px; margin: 0 auto 30px; padding: 0 22px; height: 64px; border-radius: 14px; background: #2c2c2e; }
+.tvam-search__icon { width: 24px; height: 24px; color: rgba(255,255,255,.6); flex: 0 0 24px; }
+.tvam-search__input { flex: 1 1 auto; height: 100%; border: none; outline: none; background: none; color: #fff; font: inherit; font-size: 22px; }
+.tvam-search__input::placeholder { color: rgba(255,255,255,.45); }
+.tvam-search:has(.tv-focus) { background: #fff; }
+.tvam-search:has(.tv-focus) .tvam-search__input, .tvam-search:has(.tv-focus) .tvam-search__icon { color: #1c1c1e; }
+
+/* ---------- Jetzt läuft ---------- */
+.tvam-now { position: absolute; inset: 0; display: flex; flex-direction: column; padding: 24px 120px 28px; box-sizing: border-box; overflow: clip; }
+.tvam-now__bg { position: absolute; inset: -10%; background-size: cover; background-position: center; opacity: .22; transform: scale(1.2); pointer-events: none; }
+.tvam-now::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: linear-gradient(90deg, rgba(20,20,20,.55), rgba(20,20,20,.92)); }
+.tvam-now > * { position: relative; z-index: 1; }
+.tvam-now > .tvam-now__bg { position: absolute; z-index: 0; }
+.tvam-now__main { flex: 1 1 auto; min-height: 0; display: flex; align-items: center; gap: 72px; }
+.tvam-now__cover { width: 380px; height: 380px; flex: 0 0 380px; border-radius: 14px; object-fit: cover; background: #333; box-shadow: 0 30px 70px rgba(0,0,0,.6); }
+.tvam-now__info { flex: 1 1 auto; min-width: 0; }
+.tvam-now__label { font-size: 16px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: #fa2d48; }
+.tvam-now__title { margin-top: 12px; font-size: 44px; font-weight: 700; line-height: 1.15; }
+.tvam-now__artist { margin-top: 10px; font-size: 26px; color: rgba(255,255,255,.85); }
+.tvam-now__album { margin-top: 4px; font-size: 20px; color: rgba(255,255,255,.55); }
+.tvam-now__bar { margin-top: 40px; height: 6px; border-radius: 3px; background: rgba(255,255,255,.2); max-width: 640px; }
+.tvam-now__fill { height: 100%; border-radius: 3px; background: #fff; }
+.tvam-now__times { margin-top: 10px; font-size: 16px; color: rgba(255,255,255,.6); }
+.tvam-now__buttons { margin-top: 32px; display: flex; gap: 22px; }
+.tvam-now__btn { width: 76px; height: 76px; border-radius: 50% !important; display: grid !important; place-items: center; background: rgba(255,255,255,.14) !important; color: #fff !important; }
+.tvam-now__play { width: 92px; height: 92px; }
+.tvam-now__btn svg { width: 40%; height: 40%; }
+.tvam-now__btn.tv-focus { background: #fff !important; color: #1c1c1e !important; transform: scale(1.08); }
+.tvam-now__queue { flex: 0 0 auto; margin: 0; }
+.tvam-now__queue .tvam-shelf__title { font-size: 20px; margin-bottom: 4px; }
+.tvam-card--queue { width: 150px; }
+.tvam-card--queue .tvam-card__img { width: 150px; height: 150px; border-radius: 8px; }
+.tvam-card--queue .tvam-card__title { font-size: 16px; font-weight: 600; }
+.tvam-card--queue .tvam-card__sub { font-size: 14px; }
+.tvam-now .tvam-clip { margin: 0 -10px; padding: 0 10px; }

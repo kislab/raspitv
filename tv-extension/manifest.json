@@ -107,11 +107,13 @@
       ],
       "js": [
         "tv.js",
+        "applemusic-app.js",
         "applemusic-tv.js"
       ],
       "css": [
         "tv.css",
-        "applemusic-tv.css"
+        "applemusic-tv.css",
+        "applemusic-app.css"
       ],
       "run_at": "document_idle"
     },
