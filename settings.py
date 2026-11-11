@@ -97,8 +97,13 @@ LABWC_BACKUP = LABWC / "autostart.raspitv-backup"
 LABWC_RC = LABWC / "rc.xml"
 MARK = "# RaspiTV-Startbild"
 RULE_BEGIN, RULE_END = "<!-- RaspiTV-Startbild -->", "<!-- /RaspiTV-Startbild -->"
+# Fensterregeln: Startbild immer oben; beim Öffnen des Players (Chromium) und von mpv (Jellyfin) den
+# Mauszeiger ausblenden – er kommt erst bei einer echten Mausbewegung wieder.
 RULE = (f"  {RULE_BEGIN}\n  <windowRules>\n    <windowRule identifier=\"raspitv-splash\">\n"
-        f"      <action name=\"ToggleAlwaysOnTop\"/>\n    </windowRule>\n  </windowRules>\n  {RULE_END}\n")
+        f"      <action name=\"ToggleAlwaysOnTop\"/>\n    </windowRule>\n"
+        + "".join(f"    <windowRule identifier=\"{app}\">\n      <action name=\"HideCursor\"/>\n    </windowRule>\n"
+                  for app in ("chromium*", "mpv"))
+        + f"  </windowRules>\n  {RULE_END}\n")
 
 
 def _write_if_changed(path, text):

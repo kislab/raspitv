@@ -222,8 +222,22 @@
   // ---------- Bildschirmtastatur ----------
 
   const ROWS = ["1234567890", "qwertzuiop", "asdfghjkl@", "yxcvbnm.-_"].map((r) => [...r]);
-  ROWS.push(["⇧", "Leerzeichen", "⌫", "Fertig"]);
-  let osk = null; // { input, box, row, col, shift }
+  ROWS.push(["⇧", "Leerzeichen", "⌫", "Fertig", "phone"]); // phone: Handy-Symbol – auf dem Handy tippen
+  let osk = null; // { input, box, row, col, shift, hint }
+  function phoneIcon() {
+    // Handy-Symbol per DOM (innerHTML ist auf manchen Seiten durch Trusted Types gesperrt)
+    const ns = "http://www.w3.org/2000/svg";
+    const el = (tag, attrs) => {
+      const e = document.createElementNS(ns, tag);
+      for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+      return e;
+    };
+    const svg = el("svg", { viewBox: "0 0 24 24", width: "26", height: "26", fill: "none", stroke: "currentColor",
+      "stroke-width": "2", "stroke-linecap": "round" });
+    svg.append(el("rect", { x: "6.5", y: "2", width: "11", height: "20", rx: "2.5" }), el("path", { d: "M10.5 5.5h3" }),
+      el("circle", { cx: "12", cy: "18.3", r: "1", fill: "currentColor", stroke: "none" }));
+    return svg;
+  }
 
   function setValue(input, value) {
     // Über den nativen Setter, damit React & Co. die Änderung bemerken
@@ -261,12 +275,16 @@
         cell.className = "tv-osk-key";
         if (r === osk.row && c === osk.col) cell.classList.add("tv-osk-on");
         else if (key === "⇧" && shift) cell.classList.add("tv-osk-active");
-        cell.textContent = shift && key.length === 1 ? key.toUpperCase() : key;
+        if (key === "phone") cell.append(phoneIcon());
+        else cell.textContent = shift && key.length === 1 ? key.toUpperCase() : key;
         row.append(cell);
       });
       return row;
     });
-    box.replaceChildren(text, ...rows);
+    const hint = document.createElement("div");
+    hint.className = "tv-osk-hint";
+    hint.textContent = osk.hint || "";
+    box.replaceChildren(text, ...(osk.hint ? [hint] : []), ...rows);
   }
 
   function keyboardKey(key) {
@@ -282,7 +300,10 @@
       const pressed = ROWS[osk.row][osk.col];
       const value = osk.input.value;
       if (pressed === "Fertig") return closeKeyboard();
-      if (pressed === "⇧") osk.shift = !osk.shift;
+      if (pressed === "phone") {
+        osk.hint = "Jetzt auf dem Handy in der RaspiTV-Fernbedienung tippen. Noch kein Handy verbunden? " +
+          "RaspiTV → Einstellungen → System → Handy verbinden";
+      } else if (pressed === "⇧") osk.shift = !osk.shift;
       else if (pressed === "⌫") setValue(osk.input, value.slice(0, -1));
       else if (pressed === "Leerzeichen") setValue(osk.input, value + " ");
       else {

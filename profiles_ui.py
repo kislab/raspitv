@@ -7,11 +7,12 @@ import settings as cfg
 
 PIN_LEN = 4
 TEXT_KEYS = [list("ABCDEFGHIJ"), list("KLMNOPQRST"), list("UVWXYZÄÖÜß"), list("1234567890-"),
-             ["Leerzeichen", "⌫", "Fertig"]]
-PIN_KEYS = [["1", "2", "3"], ["4", "5", "6"], ["7", "8", "9"], ["⌫", "0", "Fertig"]]
+             ["Leerzeichen", "⌫", "Fertig", "phone"]]
+PIN_KEYS = [["1", "2", "3"], ["4", "5", "6"], ["7", "8", "9"], ["⌫", "0", "Fertig", "phone"]]
 # Passwörter (WLAN): Groß/klein per ⇧, dazu Sonderzeichen; Buchstaben werden nicht automatisch groß
 PASS_KEYS = [list("1234567890ß"), list("qwertzuiopü"), list("asdfghjklöä"), ["⇧"] + list("yxcvbnm-_."),
-             list("!@#$%&*?+=/:"), ["Leerzeichen", "⌫", "Fertig"]]
+             list("!@#$%&*?+=/:"), ["Leerzeichen", "⌫", "Fertig", "phone"]]
+# "phone" (letzte Taste, Handy-Symbol): stattdessen auf dem Handy tippen (Handy-Fernbedienung)
 MAX_LEN = {"pin": PIN_LEN, "text": 20, "password": 63, "url": 100}
 
 
@@ -163,7 +164,7 @@ class AccountsUI:
 
     def open_osk(self, title, mode, done, value=""):
         self.osk = {"title": title, "value": value, "mode": mode, "row": 0, "col": 0, "done": done, "error": "",
-                    "shift": False}
+                    "shift": False, "hint": ""}
         self.menu = None
 
     def osk_rows(self):
@@ -189,7 +190,9 @@ class AccountsUI:
     def osk_press(self, label):
         o = self.osk
         o["error"] = ""
-        if label == "⌫":
+        if label == "phone":
+            self.osk_phone()
+        elif label == "⌫":
             o["value"] = o["value"][:-1]
         elif label == "Fertig":
             o["done"](o["value"])

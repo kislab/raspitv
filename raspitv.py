@@ -181,7 +181,7 @@ class Home(AccountsUI, JellyfinUI, QObject):
                          "cat": self.cat, "pane": self.pane, "item": self.item, "sub": self.sub_info(),
                          "items": [self.item_info(it) for it in self.items]},
             "profiles": {"list": [self.account_info(a) for a in self.acc_data["accounts"]], "prof": self.prof},
-            "osk": dict({k: self.osk[k] for k in ("title", "value", "mode", "row", "col", "error", "shift")},
+            "osk": dict({k: self.osk[k] for k in ("title", "value", "mode", "row", "col", "error", "shift", "hint")},
                         rows=self.osk_rows()) if self.osk else None,
         }
         text = json.dumps(state, ensure_ascii=False)
@@ -692,6 +692,16 @@ class Home(AccountsUI, JellyfinUI, QObject):
     def phone_paired(self):
         self.close_phone_pair()
         self.show_toast("Handy verbunden – es ist jetzt eine Fernbedienung")
+        if self.osk:  # über die Handy-Taste der Bildschirmtastatur gekoppelt: gleich dort weitertippen
+            self.osk_phone()
+
+    def osk_phone(self):
+        """Handy-Taste der Bildschirmtastatur: Text auf dem Handy eingeben. Ohne gekoppeltes Handy erst koppeln
+        (die Tastatur bleibt dahinter offen und bekommt danach den Text vom Handy)."""
+        if not self.settings["phone_tokens"] or not self.phone.running():
+            self.open_phone_pair()
+            return
+        self.osk["hint"] = f"Jetzt auf dem Handy tippen – Handy-Fernbedienung: {cfg.ip_address()}:{phone.PORT}"
 
     def add_phone_token(self, token):
         """Aus dem Server-Thread: sofort gültig, gespeichert wird im Hauptthread."""

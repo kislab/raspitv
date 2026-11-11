@@ -10,7 +10,7 @@ Item {
     readonly property real keyH: 3 * app.u
     readonly property real gapK: 0.5 * app.u
 
-    function keyWidth(label) { return keyW * (label.length > 1 && !pin ? 3.2 : 1) }
+    function keyWidth(label) { return label === "phone" ? keyW * (pin ? 1 : 1.4) : keyW * (label.length > 1 && !pin ? 3.2 : 1) }
     function rowWidth(r) {
         var w = 0
         for (var i = 0; i < rows[r].length; i++) w += keyWidth(rows[r][i])
@@ -87,11 +87,11 @@ Item {
             }
         }
         Label {
-            visible: !!osk.o && osk.o.error !== ""
+            visible: !!osk.o && (osk.o.error !== "" || osk.o.hint !== "")
             width: parent.width; y: 7.9 * app.u; height: 1.8 * app.u
             horizontalAlignment: Text.AlignHCenter
-            text: osk.o ? osk.o.error : ""
-            size: app.u; color: "#f28b82"
+            text: osk.o ? (osk.o.error || osk.o.hint) : ""
+            size: app.u; color: osk.o && osk.o.error ? "#f28b82" : app.blue
         }
 
         Column {
@@ -113,7 +113,14 @@ Item {
                             radius: 0.6 * app.u
                             readonly property bool latched: label === "⇧" && osk.o && osk.o.shift
                             color: focused ? app.text : latched ? app.blue : Qt.rgba(1, 1, 1, 0.1)
+                            Icon {
+                                visible: parent.label === "phone"
+                                anchors.centerIn: parent
+                                name: "phone"
+                                color: parent.focused ? app.dark : app.text
+                            }
                             Label {
+                                visible: parent.label !== "phone"
                                 anchors.centerIn: parent
                                 text: parent.label
                                 size: 1.2 * app.u

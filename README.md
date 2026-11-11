@@ -54,6 +54,10 @@ Mediacenter für den Raspberry Pi 4 im Stil von Google TV – bedienbar mit der 
   Getipptes erscheint live in der Bildschirmtastatur von RaspiTV bzw. im gewählten Textfeld der Webseite im Player
   (Netflix/Disney+/Prime über `tv.js`, alle anderen Seiten über `tv-extension/phone-text.js`), Senden = Fertig/Enter.
   Gekoppelte Handys stehen in den Geräte-Einstellungen; „Verbundene Handys entfernen“ sperrt alle wieder aus.
+  Jede Bildschirmtastatur (RaspiTV und `tv.js`) hat rechts unten eine **Handy-Taste**: zeigt, wo man auf dem Handy
+  tippt; ist in RaspiTV noch kein Handy gekoppelt, öffnet sie gleich „Handy verbinden“ (die Tastatur bleibt offen).
+- **Mauszeiger**: Fensterregeln in `~/.config/labwc/rc.xml` (`HideCursor` für Chromium und mpv, von `settings.py`
+  zusammen mit der Startbild-Regel verwaltet) blenden ihn aus, sobald Player oder Jellyfin-Wiedergabe aufgehen.
   Der QR-Code kommt aus `libqrencode` (über ctypes, Paket `libqrencode4`).
 - **Fernbedienung**: HTTP-Schnittstelle auf `127.0.0.1:8765` (`POST /key {"key": "up"}`, `"menu"` = langes OK,
   `"volumeup"`/`"volumedown"`/`"mute"`, `GET /status`).

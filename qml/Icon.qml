@@ -99,6 +99,12 @@ Canvas {
             g.beginPath(); g.arc(x, y - 0.4 * r, 0.2 * r, 0, 2 * Math.PI); g.stroke()
             g.beginPath(); g.arc(x, y + 0.2 * r, 0.07 * s, 0, 2 * Math.PI); g.fill()
             g.beginPath(); g.arc(x, y + 0.55 * r, 0.07 * s, 0, 2 * Math.PI); g.fill()
+        } else if (name === "phone") {
+            // Handy: hochkant, Lautsprecher-Strich oben, Punkt unten
+            rrect(x - 0.48 * r, y - 0.9 * r, 0.96 * r, 1.8 * r, 0.2 * r); g.stroke()
+            g.lineWidth = 0.08 * s
+            line(x - 0.14 * r, y - 0.6 * r, x + 0.14 * r, y - 0.6 * r)
+            g.beginPath(); g.arc(x, y + 0.58 * r, 0.06 * s, 0, 2 * Math.PI); g.fill()
         } else if (name === "home") {
             g.beginPath(); g.moveTo(x - 0.85 * r, y - 0.05 * r); g.lineTo(x, y - 0.85 * r); g.lineTo(x + 0.85 * r, y - 0.05 * r); g.stroke()
             g.beginPath(); g.moveTo(x - 0.6 * r, y - 0.25 * r); g.lineTo(x - 0.6 * r, y + 0.8 * r); g.lineTo(x + 0.6 * r, y + 0.8 * r)

@@ -47,6 +47,7 @@ html { scrollbar-width: none; scroll-behavior: smooth; }
 }
 #tv-osk .tv-osk-text::after { content: "▏"; color: #e50914; }
 #tv-osk .tv-osk-row { display: flex; gap: 10px; }
+#tv-osk .tv-osk-hint { color: #8ab4f8; font-size: 18px; text-align: center; max-width: 760px; }
 #tv-osk .tv-osk-key {
   min-width: 68px;
   height: 68px;
