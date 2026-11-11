@@ -116,7 +116,9 @@ class Player:
             CHROMIUM if os.path.exists(CHROMIUM) else "chromium",
             f"--user-data-dir={profile}",
             *PERFORMANCE_FLAGS,
-            "--kiosk", "--window-position=0,0", f"--window-size={width},{height}",
+            # mit Vergrößerung („scale“) zählt Chromium die Fenstergröße in vergrößerten Punkten
+            "--kiosk", "--window-position=0,0",
+            f"--window-size={round(width / float(app.get('scale') or 1))},{round(height / float(app.get('scale') or 1))}",
             "--no-first-run", "--noerrdialogs",
             "--password-store=basic",  # sonst blockiert ein Schlüsselbund-Dialog den Start
             "--lang=de", "--accept-lang=de-DE,de,en",  # Seiten auf Deutsch anfordern
@@ -133,6 +135,8 @@ class Player:
         if os.environ.get("RASPITV_DEBUG"):
             # Nur für die Entwicklung: Seite im Player per DevTools-Protokoll untersuchen
             cmd.append("--remote-debugging-port=9222")
+        if app.get("scale"):  # Seite für den Fernseher vergrößern (Schrift/Knöpfe aus der Entfernung lesbar)
+            cmd.append(f"--force-device-scale-factor={app['scale']}")
         if app.get("ua") in USER_AGENTS:
             cmd.append(f"--user-agent={USER_AGENTS[app['ua']]}")
         cmd.append(app["url"])

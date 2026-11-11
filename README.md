@@ -9,6 +9,12 @@ Mediacenter für den Raspberry Pi 4 im Stil von Google TV – bedienbar mit der 
   deinstallieren über das Kachel-Menü oder Einstellungen → Apps.
 - **Player**: Chromium im Kioskmodus (nur für DRM-Videos), mit eigener Erweiterung `tv-extension/`,
   die Netflix, Disney+ und Prime Video wie die jeweilige TV-App aussehen lässt.
+- **Apple Music** (`tv-extension/applemusic-tv.js/.css`): Webplayer music.apple.com, für den Fernseher 1,25-fach
+  vergrößert (apps.json `"scale"` → `--force-device-scale-factor`). Fernbedienung: ◀ am Inhaltsrand springt in die
+  Seitenleiste, Song-Zeilen sind ein Schritt, OK spielt den Song, Play/Pause steuert den Player der Seite, Zurück
+  schließt Anmelde-/Abo-Dialoge. Für den Pi: keine Unschärfe-Effekte und Übergänge, Reihen außerhalb des Bildes
+  werden nicht gezeichnet, die animierten „spielt gerade“-Balken stehen still (gemessen bei laufender Hörprobe:
+  ~14 % statt ~210 % CPU). Anmelden: „Anmelden“ links unten; Text am besten über die Handy-Fernbedienung tippen.
 - **Jellyfin** als eigene App in RaspiTV (`jellyfin.py`, `jellyfin_ui.py`, `qml/Jellyfin.qml`): Start (Weiterschauen,
   Nächste Folgen, Neu in …), Bibliotheken, Suche, Detailseite mit Staffeln/Folgen; Leiste oben (◀ ▶ wählen,
   ▼ in den Inhalt, ▲ zurück). Abspielen mit mpv: H.264 per Hardware-Dekoder direkt auf den Bildschirm

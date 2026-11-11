@@ -103,18 +103,34 @@
     },
     {
       "matches": [
+        "https://music.apple.com/*"
+      ],
+      "js": [
+        "tv.js",
+        "applemusic-tv.js"
+      ],
+      "css": [
+        "tv.css",
+        "applemusic-tv.css"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
         "http://*/*",
         "https://*/*"
       ],
       "exclude_matches": [
         "https://www.netflix.com/*",
         "https://www.disneyplus.com/*",
-        "https://www.primevideo.com/*"
+        "https://www.primevideo.com/*",
+        "https://music.apple.com/*"
       ],
       "js": [
         "phone-text.js"
       ],
-      "run_at": "document_idle"
+      "run_at": "document_idle",
+      "all_frames": true
     }
   ]
 }

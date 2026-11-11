@@ -1,0 +1,35 @@
+/* Apple Music auf dem Raspberry Pi: teure Effekte aus, Fokus gut sichtbar (zu applemusic-tv.js). */
+
+/* Unschärfe hinter Leisten, Knöpfen und Karten kostet den Pi bei jedem Bild viel Grafikleistung
+   (gemessen ~400 Elemente mit backdrop-filter auf „Neu“) – stattdessen deckende Flächen. */
+html.tv-am *, html.tv-am *::before, html.tv-am *::after {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  scroll-behavior: auto !important;
+}
+html.tv-am .navigation { background: #1c1c1e !important; }
+html.tv-am .chrome-player { background: #2a2a2d !important; }
+html.tv-am .chrome-volume__slider { background: #2a2a2d !important; }
+
+/* Übergänge und Animationen (Hover-Einblendungen, Hintergrund-Verläufe) aus */
+html.tv-am *, html.tv-am *::before, html.tv-am *::after {
+  transition-duration: 0s !important;
+  transition-delay: 0s !important;
+}
+
+/* Bewegte Cover („Motion Artwork“) und Hintergrund-Videos: Standbild reicht */
+html.tv-am amp-ambient-video, html.tv-am .video-artwork__video, html.tv-am [class*=motion] video { display: none !important; }
+
+/* Reihen außerhalb des Bildschirms nicht zeichnen */
+html.tv-am .section, html.tv-am .shelf-grid { content-visibility: auto; contain-intrinsic-size: auto 420px; }
+
+/* Bedien-Elemente, die mit der Fernbedienung nur stören: Pfeile der Reihen (Navigation läuft über
+   die Pfeiltasten), „In Musik öffnen“ (startet die Mac-/iPhone-App) */
+html.tv-am .shelf-grid-nav__arrow, html.tv-am .native-cta { display: none !important; }
+
+/* Gewählte Karte: Cover leicht anheben wie in der TV-App */
+html.tv-am .product-lockup__link.tv-focus { outline: none !important; }
+
+/* „Spielt gerade“-Balken (SVG-Animation): zwingt den Pi bei jedem Bild zum Neuzeichnen der Seite
+   (gemessen: Hauptthread fast voll ausgelastet) – stehende Balken zeigen dasselbe. */
+html.tv-am .playback-bars__bar, html.tv-am [class*=playback-bars] * { animation: none !important; }

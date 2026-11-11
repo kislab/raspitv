@@ -27,14 +27,17 @@
       takeover: () => false,      // eigene Oberfläche der Seite aktiv? Dann bekommt sie alle Tasten
       key: () => false,           // Taste in der eigenen Oberfläche behandeln           // gewähltes Element ist nur teilweise zu sehen (z. B. Karussell nachziehen)
       back: () => false,          // eigenes Zurück-Verhalten
+      playPause: () => false,     // Play/Pause der Fernbedienung selbst erledigen (z. B. Musik-Player der Seite)
     },
     home: () => chrome.runtime.sendMessage({ cmd: "home" }).catch(() => {}),
   });
 
   // ---------- Fokus ----------
 
+  // über tagName statt instanceof: gilt auch für Felder in eingebetteten Fenstern derselben Seite
+  // (z. B. Anmeldedialog von Apple Music), die ihre eigenen HTMLInputElement-Klassen haben
   const isTextInput = (el) =>
-    el instanceof HTMLTextAreaElement || (el instanceof HTMLInputElement && TEXT_TYPES.has(el.type));
+    !!el && (el.tagName === "TEXTAREA" || (el.tagName === "INPUT" && TEXT_TYPES.has(el.type)));
 
   function visible(el) {
     if (el.disabled || el.closest("[aria-hidden='true'], [inert], #tv-osk")) return false;
@@ -45,7 +48,7 @@
     // Liegt etwas anderes darüber (z. B. bei unsichtbar eingeklappten Feldern)? Nur im Bild prüfbar.
     const x = r.left + r.width / 2, y = r.top + r.height / 2;
     if (x < 0 || x >= innerWidth || y < 0 || y >= innerHeight) return true;
-    const hit = document.elementFromPoint(x, y);
+    const hit = el.ownerDocument.elementFromPoint(x, y); // eigenes Dokument (auch in einem eingebetteten Fenster)
     if (!hit || el.contains(hit)) return true;
     const label = hit.closest("label");
     if (label && (label.control === el || label.contains(el))) return true;
@@ -85,6 +88,7 @@
     TV.current = el;
     el.classList.add("tv-focus");
     el.focus({ preventScroll: true });
+    kickRing();
     TV.site.reveal(el);
     // Elemente im oberen Seitenbereich: ganz nach oben scrollen, damit Kopfzeile und Banner
     // vollständig zu sehen sind; weiter unten das gewählte Element mittig halten.
@@ -101,21 +105,39 @@
   const ring = document.createElement("div");
   ring.id = "tv-ring";
   document.documentElement.append(ring);
+  // Jedes Bild nachführen nur, solange sich etwas bewegt (Scrollen, Animation nach einem Tastendruck);
+  // steht alles still, reicht ein Blick alle 250 ms – sonst hält der Rahmen den Pi ständig mit 60 Bildern/s wach.
+  let still = 0;          // Bilder in Folge ohne Bewegung
+  let ringTimer = null;   // wartender setTimeout (Ruhe) – null, solange im Bild-Takt nachgeführt wird
   function trackRing() {
+    ringTimer = null;
     const el = TV.current;
     const show = el && el.isConnected && !osk && !TV.site.inPlayer() && !TV.site.takeover() && visible(el);
     ring.style.display = show ? "block" : "none";
     if (show) {
       const r = el.getBoundingClientRect();
+      const moved = !lastRect || r.left !== lastRect.left || r.top !== lastRect.top ||
+        r.width !== lastRect.width || r.height !== lastRect.height;
+      still = moved ? 0 : still + 1;
       lastRect = r;
-      const pad = 6;
-      ring.style.transform = `translate(${r.left - pad}px, ${r.top - pad}px)`;
-      ring.style.width = `${r.width + 2 * pad}px`;
-      ring.style.height = `${r.height + 2 * pad}px`;
+      if (moved) {
+        const pad = 6;
+        ring.style.transform = `translate(${r.left - pad}px, ${r.top - pad}px)`;
+        ring.style.width = `${r.width + 2 * pad}px`;
+        ring.style.height = `${r.height + 2 * pad}px`;
+      }
     }
-    // Nur nachführen, solange ein Rahmen zu sehen ist; sonst (Video, eigene Oberfläche) ruhen
-    if (show) requestAnimationFrame(trackRing);
-    else setTimeout(trackRing, 300);
+    if (show && still < 20) requestAnimationFrame(trackRing);
+    else ringTimer = setTimeout(trackRing, show ? 250 : 300);
+  }
+  /** Nach einem Tastendruck sofort wieder im Bild-Takt nachführen. */
+  function kickRing() {
+    still = 0;
+    if (ringTimer !== null) {
+      clearTimeout(ringTimer);
+      ringTimer = null;
+      requestAnimationFrame(trackRing);
+    }
   }
 
   function initial(list) {
@@ -205,7 +227,7 @@
 
   function setValue(input, value) {
     // Über den nativen Setter, damit React & Co. die Änderung bemerken
-    const proto = input instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+    const proto = input.tagName === "TEXTAREA" ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
     Object.getOwnPropertyDescriptor(proto, "value").set.call(input, value);
     input.dispatchEvent(new Event("input", { bubbles: true }));
   }
@@ -377,7 +399,8 @@
     } else if (v) {
       showVolume(+v[1], v[2] === "1");
     } else if (message.key === "playpause") {  // Play/Pause der Fernbedienung: laufendes Video umschalten
-      const video = [...document.querySelectorAll("video")].find((v) => v.readyState > 0);
+      if (TV.site.playPause()) return;
+      const video = [...document.querySelectorAll("video, audio")].find((v) => v.readyState > 0);
       if (video) video.paused ? video.play() : video.pause();
     } else if (message.key) handle(message.key, false);
   });

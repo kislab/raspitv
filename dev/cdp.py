@@ -85,12 +85,14 @@ def evaluate(expression, extension=False):
     ws = WS(page()["webSocketDebuggerUrl"])
     params = {"expression": expression, "returnByValue": True, "awaitPromise": True}
     if extension:
+        top = ws.call("Page.getFrameTree")["frameTree"]["frame"]["id"]  # Hauptfenster, nicht eingebettete
         ws.s.settimeout(3)
         wanted = ws.send("Runtime.enable")
         while "contextId" not in params:
             msg = ws.recv()
             ctx = msg.get("params", {}).get("context", {})
-            if msg.get("method") == "Runtime.executionContextCreated" and ctx.get("name") == EXTENSION:
+            if (msg.get("method") == "Runtime.executionContextCreated" and ctx.get("name") == EXTENSION
+                    and ctx.get("auxData", {}).get("frameId") == top):
                 params["contextId"] = ctx["id"]
         ws.s.settimeout(20)
     result = ws.call("Runtime.evaluate", params)
