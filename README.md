@@ -14,7 +14,10 @@ Mediacenter für den Raspberry Pi 4 im Stil von Google TV – bedienbar mit der 
   Seitenleiste, Song-Zeilen sind ein Schritt, OK spielt den Song, Play/Pause steuert den Player der Seite, Zurück
   schließt Anmelde-/Abo-Dialoge. Für den Pi: keine Unschärfe-Effekte und Übergänge, Reihen außerhalb des Bildes
   werden nicht gezeichnet, die animierten „spielt gerade“-Balken stehen still (gemessen bei laufender Hörprobe:
-  ~14 % statt ~210 % CPU). Anmelden: „Anmelden“ links unten; Text am besten über die Handy-Fernbedienung tippen.
+  ~14 % statt ~210 % CPU). Aussehen wie die TV-App: Leiste oben (Logo, Bereiche als Pillen, Anmelden rechts) statt Seitenleiste, Schrift in TV-Größe, keine
+  Player-Leiste – sobald etwas spielt, steht oben **Jetzt läuft** (Vollbild mit Cover, Fortschritt, ⏮ ⏯ ⏭ und Reihe „Als Nächstes“
+  aus der MusicKit-Warteschlange über `applemusic-main.js`; OK springt zum Titel). Anmelden: „Anmelden“ oben rechts; Text am besten
+  über die Handy-Fernbedienung tippen.
 - **Jellyfin** als eigene App in RaspiTV (`jellyfin.py`, `jellyfin_ui.py`, `qml/Jellyfin.qml`): Start (Weiterschauen,
   Nächste Folgen, Neu in …), Bibliotheken, Suche, Detailseite mit Staffeln/Folgen; Leiste oben (◀ ▶ wählen,
   ▼ in den Inhalt, ▲ zurück). Abspielen mit mpv: H.264 per Hardware-Dekoder direkt auf den Bildschirm

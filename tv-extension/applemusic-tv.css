@@ -33,3 +33,175 @@ html.tv-am .product-lockup__link.tv-focus { outline: none !important; }
 /* „Spielt gerade“-Balken (SVG-Animation): zwingt den Pi bei jedem Bild zum Neuzeichnen der Seite
    (gemessen: Hauptthread fast voll ausgelastet) – stehende Balken zeigen dasselbe. */
 html.tv-am .playback-bars__bar, html.tv-am [class*=playback-bars] * { animation: none !important; }
+
+/* ---------- Aussehen wie Apple Music auf dem Fernseher (tvOS) ----------
+   Seitenleiste → Leiste oben (Logo links, Bereiche als Pillen in der Mitte, Anmelden rechts), keine
+   Seitentitel und kein Abo-Banner; Inhalt über die ganze Breite, gewählte Karte hebt sich an. */
+html.tv-am { --web-navigation-width: 0px !important; --bodyGutter: 56px !important; }
+html.tv-am, html.tv-am body { height: 100% !important; overflow: hidden !important; }
+html.tv-am .app-container {
+  grid-template-columns: 100% !important;
+  grid-template-rows: 104px minmax(0, 1fr) !important;
+  grid-template-areas: "structure-header" "structure-main-section" !important;
+  height: 100vh !important;
+}
+html.tv-am .upsell-banner, html.tv-am .banner, html.tv-am [class*=locale-switcher] { display: none !important; }
+html.tv-am .header {
+  grid-area: structure-header !important; width: 100% !important; height: 104px !important;
+  position: relative !important; z-index: 5 !important; background: #1f1f1f !important;
+}
+/* weicher Übergang: Inhalt läuft unter der Leiste aus, statt hart abgeschnitten zu wirken */
+html.tv-am .header::after {
+  content: ""; position: absolute; left: 0; right: 0; top: 100%; height: 36px; pointer-events: none;
+  background: linear-gradient(#1f1f1f, rgba(31, 31, 31, 0));
+}
+html.tv-am :focus-visible, html.tv-am :focus { outline: none !important; }
+html.tv-am .tv-am-now__btn:focus { box-shadow: none !important; }
+html.tv-am .navigation {
+  width: 100% !important; height: 104px !important;
+  display: flex !important; flex-direction: row !important; align-items: center !important;
+  padding: 0 48px !important; box-sizing: border-box !important;
+  background: transparent !important; border: none !important;
+}
+html.tv-am .navigation__header, html.tv-am .navigation .logo {
+  flex: 0 0 240px !important; height: 48px !important; padding: 0 !important; margin: 0 !important;
+  display: flex !important; align-items: center !important;
+}
+html.tv-am .navigation .logo svg { height: 30px !important; width: auto !important; }
+html.tv-am .navigation__content, html.tv-am .navigation__scrollable-container {
+  display: flex !important; flex-direction: row !important; align-items: center !important;
+  flex: 1 1 auto !important; height: auto !important; overflow: visible !important; margin: 0 !important; padding: 0 !important;
+}
+/* Apples Ausblend-Maske der Seitenleiste würde Pillen und „Anmelden“ oben anschneiden */
+html.tv-am .navigation__content, html.tv-am .navigation__scrollable-container, html.tv-am .navigation__native-cta {
+  -webkit-mask-image: none !important; mask-image: none !important;
+}
+html.tv-am .navigation-items { flex: 1 1 auto !important; display: flex !important; justify-content: center !important; margin: 0 !important; padding: 0 !important; }
+html.tv-am .navigation-items__list {
+  display: flex !important; flex-direction: row !important; gap: 4px !important;
+  padding: 6px !important; border-radius: 999px !important; background: #2c2c2e !important;
+}
+html.tv-am .navigation-item { margin: 0 !important; }
+html.tv-am .navigation-item__link, html.tv-am .navigation-item__link * { font-size: 17px !important; font-weight: 600 !important; }
+html.tv-am .navigation-item__link {
+  display: flex !important; align-items: center !important; gap: 8px !important;
+  padding: 8px 22px !important; border-radius: 999px !important; height: auto !important;
+  font-size: 17px !important; font-weight: 600 !important; color: rgba(255,255,255,.65) !important; background: none !important;
+}
+html.tv-am .navigation-item:not(.navigation-item__search) .navigation-item__link svg,
+html.tv-am .navigation-item:not(.navigation-item__search) .navigation-item__link [class*=icon] { display: none !important; }
+html.tv-am .navigation-item--selected .navigation-item__link { background: #5a5a5e !important; color: #fff !important; }
+html.tv-am .navigation-item__link:focus, html.tv-am .navigation-item__link:focus-visible { outline: none !important; box-shadow: none !important; }
+html.tv-am .navigation-item__link.tv-focus {
+  background: #fff !important; --navigation-item-text-color: #1c1c1e; --navigation-item-icon-color: #1c1c1e;
+}
+html.tv-am .navigation-item__link.tv-focus, html.tv-am .navigation-item__link.tv-focus * { color: #1c1c1e !important; }
+/* In der Leiste zeigt die weiße Pille die Auswahl – kein zusätzlicher Rahmen */
+html.tv-am-noring #tv-ring { display: none !important; }
+html.tv-am .navigation__native-cta { flex: 0 0 240px !important; align-items: center !important; display: flex !important; justify-content: flex-end !important; padding: 0 !important; position: static !important; }
+html.tv-am .navigation__native-cta > *, html.tv-am .auth-button { margin: 0 !important; position: static !important; }
+html.tv-am .navigation__native-cta .signin { width: auto !important; padding: 8px 20px !important; border-radius: 999px !important; }
+
+html.tv-am .scrollable-page { grid-area: structure-main-section !important; scrollbar-width: none !important; }
+/* Apples Player-Leiste nie zeigen – stattdessen „Jetzt läuft“ oben (applemusic-tv.js); ihre Knöpfe
+   bleiben im Hintergrund und steuern die Wiedergabe */
+html.tv-am .player-bar { display: none !important; }
+html.tv-am .header-nav__heading { display: none !important; }
+
+/* Karten: gewählte Karte etwas größer mit Schatten, ohne Rahmen */
+html.tv-am .tv-focus :is(.artwork-component, .product-lockup__artwork, picture) {
+  transform: scale(1.07); box-shadow: 0 18px 40px rgba(0,0,0,.65); border-radius: 10px;
+}
+html.tv-am .shelf-grid__list { overflow: visible !important; padding-top: 14px !important; padding-bottom: 18px !important; }
+html.tv-am .shelf-grid__body { overflow-x: clip; overflow-y: visible; }
+
+/* ---------- Jetzt läuft (Vollbild) ---------- */
+html.tv-am .tv-am-now {
+  position: fixed; left: 0; right: 0; top: 104px; bottom: 0; z-index: 4;
+  display: flex; flex-direction: column; padding: 24px 120px 28px; box-sizing: border-box;
+  background: #1f1f1f; overflow: clip; color: #fff;  /* clip: lässt sich auch per scrollIntoView nicht verschieben */
+}
+/* Hintergrund: Cover groß und abgedunkelt (keine Unschärfe – die kostet den Pi zu viel) */
+html.tv-am .tv-am-now__bg {
+  position: absolute; inset: -10%; background-size: cover; background-position: center;
+  opacity: .22; transform: scale(1.2); pointer-events: none;
+}
+html.tv-am .tv-am-now::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none;  /* sonst hält tv.js die Knöpfe für verdeckt */
+  background: linear-gradient(90deg, rgba(20,20,20,.55), rgba(20,20,20,.92));
+}
+html.tv-am .tv-am-now > :not(.tv-am-now__bg) { position: relative; z-index: 1; }
+html.tv-am .tv-am-now__main { flex: 1 1 auto; min-height: 0; display: flex; align-items: center; gap: 72px; }
+html.tv-am .tv-am-now__cover {
+  width: 380px; height: 380px; flex: 0 0 380px; border-radius: 14px; object-fit: cover;
+  background: #333; box-shadow: 0 30px 70px rgba(0,0,0,.6);
+}
+html.tv-am .tv-am-now__info { flex: 1 1 auto; min-width: 0; }
+html.tv-am .tv-am-now__label { font-size: 16px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: #fa2d48; }
+html.tv-am .tv-am-now__title { margin-top: 12px; font-size: 44px; font-weight: 700; line-height: 1.15; }
+html.tv-am .tv-am-now__artist { margin-top: 10px; font-size: 26px; color: rgba(255,255,255,.85); }
+html.tv-am .tv-am-now__album { margin-top: 4px; font-size: 20px; color: rgba(255,255,255,.55); }
+html.tv-am .tv-am-now__bar { margin-top: 40px; height: 6px; border-radius: 3px; background: rgba(255,255,255,.2); max-width: 640px; }
+html.tv-am .tv-am-now__fill { height: 100%; border-radius: 3px; background: #fff; }
+html.tv-am .tv-am-now__times { margin-top: 10px; font-size: 16px; color: rgba(255,255,255,.6); }
+html.tv-am .tv-am-now__buttons { margin-top: 32px; display: flex; gap: 22px; }
+html.tv-am .tv-am-now__btn {
+  width: 76px; height: 76px; border-radius: 50%; border: none; padding: 0;
+  display: grid; place-items: center; background: rgba(255,255,255,.14); color: #fff;
+}
+html.tv-am .tv-am-now__play { width: 92px; height: 92px; }
+html.tv-am .tv-am-now__btn svg { width: 40%; height: 40%; }
+html.tv-am .tv-am-now__btn.tv-focus { background: #fff; color: #1c1c1e; transform: scale(1.08); }
+html.tv-am .tv-am-now-item .navigation-item__link::before {
+  content: ""; width: 8px; height: 8px; border-radius: 50%; background: #fa2d48;
+}
+html.tv-am.tv-am-now-open .navigation-item--selected .navigation-item__link { background: none !important; color: rgba(255,255,255,.65) !important; }
+html.tv-am.tv-am-now-open .tv-am-now-item .navigation-item__link:not(.tv-focus) { background: #5a5a5e !important; color: #fff !important; }
+
+/* ---------- Schriftgrößen für den Fernseher ----------
+   Apple nutzt Desktop-Größen (11–13 px); auf dem Sofa zu klein. Werte sind CSS-Pixel – der Player
+   vergrößert die Seite zusätzlich um 1,25 (apps.json "scale"). */
+html.tv-am .shelf-header h2, html.tv-am .section h2, html.tv-am .title__button { font-size: 24px !important; line-height: 1.25 !important; }
+html.tv-am [class*=eyebrow] { font-size: 14px !important; line-height: 1.3 !important; }
+html.tv-am .editorial-card__title, html.tv-am [class*=editorial] h3 { font-size: 21px !important; line-height: 1.3 !important; }
+html.tv-am .editorial-card__subtitle, html.tv-am [class*=editorial] [class*=subtitle] { font-size: 18px !important; line-height: 1.3 !important; }
+html.tv-am .product-lockup__title, html.tv-am .product-lockup__title * { font-size: 17px !important; line-height: 1.3 !important; }
+html.tv-am .product-lockup__subtitle, html.tv-am .product-lockup__subtitle * { font-size: 15px !important; line-height: 1.3 !important; }
+html.tv-am .product-lockup__content { margin-top: 8px !important; }
+/* Song-Reihen („Die besten neuen Songs“, „Derzeit beliebt“): größeres Cover, größere Schrift, kein „…“ */
+html.tv-am .track-lockup { min-height: 76px !important; align-items: center !important; }
+html.tv-am .track-lockup__artwork-wrapper, html.tv-am .track-lockup .artwork-component {
+  width: 64px !important; height: 64px !important; flex: 0 0 64px !important; --artwork-override-width: 64px; --artwork-override-height: 64px;
+}
+html.tv-am .track-lockup__content { padding-left: 14px !important; }
+html.tv-am .track-lockup__title, html.tv-am .track-lockup__title * { font-size: 18px !important; line-height: 1.3 !important; }
+html.tv-am .track-lockup__subtitle, html.tv-am .track-lockup__subtitle * { font-size: 15px !important; line-height: 1.3 !important; }
+html.tv-am .track-lockup__context-menu { display: none !important; }
+/* Song-Listen auf Album- und Playlist-Seiten */
+html.tv-am .songs-list-row__song-name, html.tv-am .songs-list-row__song-name *, html.tv-am .songs-list-row__column-data,
+html.tv-am .songs-list-row__length { font-size: 18px !important; line-height: 1.3 !important; }
+html.tv-am .songs-list-row__by-line, html.tv-am .songs-list-row__by-line *, html.tv-am .songs-list-row [class*=album] {
+  font-size: 15px !important; line-height: 1.3 !important;
+}
+html.tv-am .songs-list-row { min-height: 62px !important; }
+html.tv-am .songs-list-row__context-menu { visibility: hidden !important; }
+/* Kopf von Album-/Playlist-Seiten */
+html.tv-am .headings__metadata-bottom { font-size: 15px !important; }
+html.tv-am .container-detail-header .truncate-wrapper, html.tv-am .container-detail-header .truncate-wrapper * { font-size: 16px !important; line-height: 1.4 !important; }
+/* Warteschlange („Als Nächstes“) unten in Jetzt läuft */
+html.tv-am .tv-am-now__queue { flex: 0 0 auto; overflow: clip; margin: 0 -10px; padding: 0 10px; }
+html.tv-am .tv-am-now__queue--empty { display: none; }
+html.tv-am .tv-am-now__queue-label { font-size: 20px; font-weight: 700; margin-bottom: 12px; }
+html.tv-am .tv-am-now__queue-list { display: flex; gap: 22px; padding: 8px 0 10px; }  /* seitlich verschoben per transform */
+html.tv-am .tv-am-now__qitem {
+  flex: 0 0 150px; width: 150px; padding: 0; border: none; background: none; color: #fff; text-align: left;
+}
+html.tv-am .tv-am-now__qitem img { width: 150px; height: 150px; border-radius: 8px; object-fit: cover; background: #333; display: block; }
+html.tv-am .tv-am-now__qitem.tv-focus img { transform: scale(1.06); box-shadow: 0 12px 30px rgba(0,0,0,.6); }
+html.tv-am .tv-am-now__qtitle { margin-top: 8px; font-size: 16px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+html.tv-am .tv-am-now__qartist { font-size: 14px; color: rgba(255,255,255,.6); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Radio-Folgen und ähnliche Zeilen mit Beschreibung */
+html.tv-am .horizontal-lockup__title, html.tv-am .horizontal-lockup__title * { font-size: 18px !important; line-height: 1.3 !important; }
+html.tv-am .horizontal-lockup [class*=description], html.tv-am .horizontal-lockup [class*=description] * { font-size: 15px !important; line-height: 1.35 !important; }
+html.tv-am .horizontal-lockup [class*=subtitle], html.tv-am .horizontal-lockup [class*=subtitle] * { font-size: 14px !important; }
+html.tv-am .horizontal-lockup .cloud-buttons, html.tv-am .horizontal-lockup amp-contextual-menu-button { display: none !important; }

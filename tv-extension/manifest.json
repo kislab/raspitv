@@ -117,6 +117,16 @@
     },
     {
       "matches": [
+        "https://music.apple.com/*"
+      ],
+      "js": [
+        "applemusic-main.js"
+      ],
+      "world": "MAIN",
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
         "http://*/*",
         "https://*/*"
       ],
