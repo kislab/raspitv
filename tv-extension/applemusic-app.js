@@ -189,6 +189,53 @@
     show(key, pages[key], !fromHeader); // über die Leiste gewechselt: Fokus bleibt in der Leiste
   }
 
+  // ---------- Collage für Playlists ohne Cover ----------
+  // Selbst erstellte Playlists haben bei Apple oft kein Cover; Apple zeigt dann 2×2 Cover der ersten Titel.
+  // Nachgebaut: erste Titel holen (nacheinander, nicht alle Playlists gleichzeitig), Ergebnis merken.
+  const mosaics = new Map();   // Playlist-ID -> Promise<[Bild-Vorlagen]>
+  let mosaicChain = Promise.resolve();
+  function mosaicFor(it) {
+    if (!mosaics.has(it.id)) {
+      const path = it.type === "library-playlists" ? `/v1/me/library/playlists/${it.id}/tracks` : `/v1/catalog/{sf}/playlists/${it.id}/tracks`;
+      const job = mosaicChain.then(() => api(path, { limit: 20 })).then((data) => {
+        const seen = new Set(), arts = [];
+        for (const t of data.data || []) {
+          const art = t.attributes?.artwork;
+          const key = t.attributes?.albumName || art?.url;
+          if (!art?.url || seen.has(key)) continue;
+          seen.add(key);
+          arts.push(art);
+          if (arts.length === 4) break;
+        }
+        return arts;
+      }).catch(() => []);
+      mosaicChain = job.then(() => {}, () => {});
+      mosaics.set(it.id, job);
+    }
+    return mosaics.get(it.id);
+  }
+  /** Leeres Cover-Bild durch Collage (4 Cover) bzw. das erste Song-Cover ersetzen */
+  function fillMissingArt(img, it, size) {
+    if (!it.type?.includes("playlist")) return;
+    mosaicFor(it).then((arts) => {
+      if (!arts.length || !img.isConnected) return;
+      if (arts.length < 4) {
+        img.src = artUrl(arts[0], size);
+        img.classList.remove("is-empty");
+        return;
+      }
+      const box = el("div", `${img.className} tvam-mosaic`);
+      box.classList.remove("is-empty");
+      for (const art of arts) {
+        const part = el("img");
+        part.decoding = "async";
+        part.src = artUrl(art, Math.round(size / 2));
+        box.append(part);
+      }
+      img.replaceWith(box);
+    });
+  }
+
   // ---------- Reihen und Karten ----------
   function card(it, kind) {
     const b = el("button", `tvam-card tvam-card--${kind}`);
@@ -202,7 +249,7 @@
     img.loading = "lazy";
     img.decoding = "async";
     const url = kind === "wide" ? artUrl(it.wide || it.art, 640, 360) : artUrl(it.art, 300);
-    if (url) img.src = url; else img.classList.add("is-empty");
+    if (url) img.src = url; else { img.classList.add("is-empty"); fillMissingArt(img, it, 300); }
     b.append(img);
     if (kind !== "wide") {
       b.append(el("div", "tvam-card__title", it.title));
@@ -376,7 +423,7 @@
     const head = el("div", "tvam-detail");
     const img = el("img", "tvam-detail__art");
     const url = artUrl(a.artwork || it.art, 400);
-    if (url) img.src = url; else img.classList.add("is-empty");
+    if (url) img.src = url; else { img.classList.add("is-empty"); fillMissingArt(img, it, 400); }
     const info = el("div", "tvam-detail__info");
     info.append(el("div", "tvam-detail__title", text(a.name) || it.title));
     const by = a.artistName || a.curatorName || it.sub;
