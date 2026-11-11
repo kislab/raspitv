@@ -41,6 +41,13 @@ Mediacenter für den Raspberry Pi 4 im Stil von Google TV – bedienbar mit der 
   **Bildschirmschoner** (Uhr und Datum, wandern alle 20 s – kein Einbrennen) und **Bildschirm aus**, wenn so lange
   keine Taste gedrückt wurde (nie während ein Dienst oder Film läuft). Bildschirm aus = HDMI-Ausgang per
   `wlr-randr` abschalten (wlopm/DPMS geht unter labwc nicht); die nächste Taste schaltet ihn wieder ein.
+- **Handy als Fernbedienung** (`phone.py`, Seite `phone/remote.html`): Einstellungen → System → **Handy verbinden**
+  zeigt QR-Code, Adresse (`http://<IP>:8766`) und einen 4-stelligen Code, der nur gilt, solange die Seite offen ist.
+  Danach hat das Handy Steuerkreuz, OK (lang = Menü), Zurück, Home, Lautstärke, Stumm, Play/Pause und ein Textfeld:
+  Getipptes erscheint live in der Bildschirmtastatur von RaspiTV bzw. im gewählten Textfeld der Webseite im Player
+  (Netflix/Disney+/Prime über `tv.js`, alle anderen Seiten über `tv-extension/phone-text.js`), Senden = Fertig/Enter.
+  Gekoppelte Handys stehen in den Geräte-Einstellungen; „Verbundene Handys entfernen“ sperrt alle wieder aus.
+  Der QR-Code kommt aus `libqrencode` (über ctypes, Paket `libqrencode4`).
 - **Fernbedienung**: HTTP-Schnittstelle auf `127.0.0.1:8765` (`POST /key {"key": "up"}`, `"menu"` = langes OK,
   `"volumeup"`/`"volumedown"`/`"mute"`, `GET /status`).
 

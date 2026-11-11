@@ -345,10 +345,34 @@
     toastTimer = setTimeout(() => toast.classList.remove("tv-toast-on"), seconds * 1000);
   }
 
+  // Text vom Handy (RaspiTV schickt "text:<fertig 0/1>:<text>"): in die offene Bildschirmtastatur
+  // bzw. das gewählte Textfeld der Seite; „fertig“ schließt die Tastatur bzw. drückt Enter.
+  function typeText(text, submit) {
+    if (osk) {
+      setValue(osk.input, text);
+      if (submit) closeKeyboard();
+      else renderKeyboard();
+      return;
+    }
+    const active = document.activeElement;
+    const el = active && isTextInput(active) ? active : TV.current && isTextInput(TV.current) ? TV.current : null;
+    if (!el) return;
+    el.focus();
+    setValue(el, text);
+    if (submit) {
+      for (const type of ["keydown", "keypress", "keyup"]) {
+        el.dispatchEvent(new KeyboardEvent(type, { key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true }));
+      }
+    }
+  }
+
   chrome.runtime.onMessage.addListener((message) => {
     const v = /^volume:(\d+):([01])$/.exec(message.key || "");
     const t = /^toast:(\d+):(.*)$/s.exec(message.key || "");
-    if (t) {
+    const typed = /^text:([01]):(.*)$/s.exec(message.key || "");
+    if (typed) {
+      typeText(typed[2], typed[1] === "1");
+    } else if (t) {
       showToast(+t[1], t[2]);
     } else if (v) {
       showVolume(+v[1], v[2] === "1");

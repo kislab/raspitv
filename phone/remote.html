@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0e1013">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="RaspiTV">
+<title>RaspiTV</title>
+<!-- Handy als Fernbedienung für RaspiTV (ausgeliefert von phone.py). Aussehen wie die TV-Oberfläche. -->
+<style>
+  :root {
+    --bg: #0e1013; --panel: #1b1d22; --card: #22252b; --key: #2a2d34; --key-on: #3a3e47;
+    --text: #e8eaed; --soft: #c4c7cc; --muted: #9aa0a6; --blue: #8ab4f8; --red: #f28b82;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); }
+  body {
+    font: 16px/1.3 "Nunito Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    display: flex; flex-direction: column; align-items: center;
+    padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom));
+    user-select: none; -webkit-user-select: none; touch-action: manipulation; overscroll-behavior: none;
+  }
+  header { width: 100%; max-width: 420px; display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+  header h1 { font-size: 22px; font-weight: 800; margin: 0; letter-spacing: .2px; }
+  #status { font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+  #status::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+  #status.on::before { background: #81c995; }
+  #status.off::before { background: var(--red); }
+  main { width: 100%; max-width: 420px; display: flex; flex-direction: column; gap: 18px; }
+  button {
+    font: inherit; color: var(--text); background: var(--key); border: 0; border-radius: 16px;
+    display: flex; align-items: center; justify-content: center; cursor: pointer;
+    transition: background .12s, transform .08s;
+  }
+  button:active, button.pressed { background: var(--key-on); transform: scale(.96); }
+  svg { width: 26px; height: 26px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+  /* Steuerkreuz */
+  .pad { position: relative; width: min(84vw, 330px); aspect-ratio: 1; margin: 4px auto 0; border-radius: 50%; background: var(--panel); }
+  .pad button { position: absolute; background: transparent; border-radius: 0; }
+  .pad button:active, .pad button.pressed { background: rgba(255,255,255,.06); transform: none; }
+  .pad .up    { left: 30%; right: 30%; top: 0; height: 30%; border-radius: 50% 50% 0 0 / 100% 100% 0 0; }
+  .pad .down  { left: 30%; right: 30%; bottom: 0; height: 30%; border-radius: 0 0 50% 50% / 0 0 100% 100%; }
+  .pad .left  { top: 30%; bottom: 30%; left: 0; width: 30%; border-radius: 50% 0 0 50% / 100% 0 0 100%; }
+  .pad .right { top: 30%; bottom: 30%; right: 0; width: 30%; border-radius: 0 50% 50% 0 / 0 100% 100% 0; }
+  .pad .ok {
+    left: 31%; top: 31%; width: 38%; height: 38%; border-radius: 50%; background: var(--card);
+    font-weight: 800; font-size: 19px; letter-spacing: .5px; box-shadow: 0 4px 18px rgba(0,0,0,.35);
+  }
+  .pad .ok:active, .pad .ok.pressed { background: var(--key-on); }
+
+  .row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .row button { height: 60px; flex-direction: column; gap: 3px; font-size: 12px; color: var(--soft); }
+  .row button svg { color: var(--text); }
+  .vol { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 12px; }
+  .vol button { height: 56px; }
+
+  /* Text senden */
+  .type { display: flex; gap: 10px; }
+  .type input {
+    flex: 1; min-width: 0; height: 52px; border-radius: 16px; border: 2px solid transparent; outline: 0;
+    background: var(--panel); color: var(--text); font: inherit; font-size: 17px; padding: 0 16px;
+    user-select: text; -webkit-user-select: text;
+  }
+  .type input:focus { border-color: var(--blue); }
+  .type input::placeholder { color: var(--muted); }
+  .type button { width: 56px; height: 52px; background: var(--blue); color: #202124; }
+  .hint { font-size: 12px; color: var(--muted); margin: -10px 4px 0; min-height: 15px; }
+  .hint.live { color: var(--blue); }
+
+  /* Koppeln */
+  #pair { display: none; width: 100%; max-width: 420px; text-align: center; margin-top: 8vh; }
+  #pair h2 { font-size: 24px; margin: 0 0 8px; }
+  #pair p { color: var(--soft); margin: 0 0 26px; }
+  #code {
+    width: 220px; height: 70px; border-radius: 18px; border: 2px solid var(--key); background: var(--panel);
+    color: var(--text); text-align: center; font-family: inherit; font-weight: 800; font-size: 36px;
+    letter-spacing: 14px; padding-left: 14px; outline: 0;
+  }
+  #code:focus { border-color: var(--blue); }
+  #pairError { color: var(--red); min-height: 22px; margin-top: 14px; }
+  body.pairing #pair { display: block; }
+  body.pairing main { display: none; }
+</style>
+</head>
+<body>
+<header>
+  <h1>RaspiTV</h1>
+  <div id="status">verbinde …</div>
+</header>
+
+<section id="pair">
+  <h2>Mit RaspiTV koppeln</h2>
+  <p>Am Fernseher: Einstellungen → System → <b>Handy verbinden</b>.<br>Dort steht der Code.</p>
+  <input id="code" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="one-time-code" placeholder="····">
+  <div id="pairError"></div>
+</section>
+
+<main>
+  <div class="pad">
+    <button class="up" data-key="up" data-repeat aria-label="Hoch"><svg viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></svg></button>
+    <button class="left" data-key="left" data-repeat aria-label="Links"><svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg></button>
+    <button class="right" data-key="right" data-repeat aria-label="Rechts"><svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></button>
+    <button class="down" data-key="down" data-repeat aria-label="Runter"><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>
+    <button class="ok" data-key="ok" data-long="menu" aria-label="OK">OK</button>
+  </div>
+
+  <div class="row">
+    <button data-key="back"><svg viewBox="0 0 24 24"><path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg>Zurück</button>
+    <button data-key="home"><svg viewBox="0 0 24 24"><path d="M3 10.5L12 3l9 7.5"/><path d="M5 9v11h14V9"/></svg>Home</button>
+    <button data-key="menu"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></svg>Menü</button>
+  </div>
+
+  <div class="vol">
+    <button data-key="volumedown" data-repeat aria-label="Leiser"><svg viewBox="0 0 24 24"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path d="M16 12h4"/></svg></button>
+    <button data-key="mute" aria-label="Stumm"><svg viewBox="0 0 24 24"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path d="M16 9.5l5 5M21 9.5l-5 5"/></svg></button>
+    <button data-key="volumeup" data-repeat aria-label="Lauter"><svg viewBox="0 0 24 24"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path d="M15.5 12h5M18 9.5v5"/></svg></button>
+    <button data-key="playpause" aria-label="Play/Pause"><svg viewBox="0 0 24 24"><path d="M5 5v14l8-7z"/><path d="M16 6v12M20 6v12"/></svg></button>
+  </div>
+
+  <div class="type">
+    <input id="text" type="text" placeholder="Text tippen (Suche, Passwort …)" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="send">
+    <button id="send" aria-label="Senden"><svg viewBox="0 0 24 24"><path d="M5 12h13M13 6l6 6-6 6"/></svg></button>
+  </div>
+  <div class="hint" id="hint">Erscheint im Textfeld, das am Fernseher offen ist.</div>
+</main>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+let token = "";
+try { token = localStorage.getItem("raspitv-token") || ""; } catch (e) {}
+
+function setStatus(text, cls) { const s = $("status"); s.textContent = text; s.className = cls || ""; }
+function buzz() { if (navigator.vibrate) navigator.vibrate(12); }
+
+async function call(path, body) {
+  const res = await fetch(path, {
+    method: body === undefined ? "GET" : "POST",
+    headers: { "Content-Type": "application/json", "X-Token": token },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  if (res.status === 401) { showPair(); throw new Error("unauthorized"); }
+  return res.json();
+}
+
+// ---------- Koppeln ----------
+function showPair() {
+  token = "";
+  try { localStorage.removeItem("raspitv-token"); } catch (e) {}
+  document.body.classList.add("pairing");
+  setStatus("nicht gekoppelt", "off");
+  setTimeout(() => $("code").focus(), 50);
+}
+$("code").addEventListener("input", async (e) => {
+  const code = e.target.value.replace(/\D/g, "").slice(0, 4);
+  e.target.value = code;
+  $("pairError").textContent = "";
+  if (code.length < 4) return;
+  try {
+    const res = await fetch("/pair", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code }) });
+    const data = await res.json();
+    if (!data.token) throw new Error(data.error || "Koppeln fehlgeschlagen");
+    token = data.token;
+    try { localStorage.setItem("raspitv-token", token); } catch (err) {}
+    document.body.classList.remove("pairing");
+    e.target.value = "";
+    poll();
+  } catch (err) {
+    $("pairError").textContent = err.message === "Failed to fetch" ? "RaspiTV nicht erreichbar" : err.message;
+    e.target.value = "";
+  }
+});
+
+// ---------- Tasten ----------
+function press(key) {
+  buzz();
+  call("/key", { key }).then(() => setStatus("verbunden", "on")).catch((e) => {
+    if (e.message !== "unauthorized") setStatus("nicht erreichbar", "off");
+  });
+}
+for (const btn of document.querySelectorAll("[data-key]")) {
+  let repeat = null, longTimer = null, longDone = false;
+  const stop = () => {
+    btn.classList.remove("pressed");
+    clearTimeout(repeat); clearInterval(repeat); repeat = null;
+    clearTimeout(longTimer);
+  };
+  btn.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    btn.classList.add("pressed");
+    longDone = false;
+    if (btn.dataset.long) {  // OK: kurz = OK, lang = Menü (wie an der Fernbedienung)
+      longTimer = setTimeout(() => { longDone = true; press(btn.dataset.long); }, 600);
+      return;
+    }
+    press(btn.dataset.key);
+    if (btn.hasAttribute("data-repeat")) {  // gedrückt halten wiederholt
+      repeat = setTimeout(() => { repeat = setInterval(() => press(btn.dataset.key), 130); }, 420);
+    }
+  });
+  btn.addEventListener("pointerup", () => {
+    if (btn.dataset.long && !longDone && btn.classList.contains("pressed")) press(btn.dataset.key);
+    stop();
+  });
+  btn.addEventListener("pointerleave", stop);
+  btn.addEventListener("pointercancel", stop);
+  btn.addEventListener("contextmenu", (e) => e.preventDefault());
+}
+
+// ---------- Text: erscheint beim Tippen live am Fernseher, Senden = fertig ----------
+let textTimer = null;
+function sendText(submit) {
+  clearTimeout(textTimer);
+  const text = $("text").value;
+  call("/text", { text, submit }).catch(() => {});
+  if (submit) { buzz(); $("text").value = ""; }
+}
+$("text").addEventListener("input", () => { clearTimeout(textTimer); textTimer = setTimeout(() => sendText(false), 250); });
+$("text").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); sendText(true); } });
+$("send").addEventListener("click", () => sendText(true));
+
+// ---------- Zustand ----------
+async function poll() {
+  if (!token) return showPair();
+  try {
+    const s = await call("/state");
+    setStatus(s.app ? `verbunden · ${s.app}` : "verbunden", "on");
+    const hint = $("hint");
+    hint.textContent = s.typing ? `Textfeld offen: ${s.title || "Eingabe"}` : "Erscheint im Textfeld, das am Fernseher offen ist.";
+    hint.className = s.typing ? "hint live" : "hint";
+  } catch (e) {
+    if (e.message !== "unauthorized") setStatus("nicht erreichbar", "off");
+  }
+}
+poll();
+setInterval(() => { if (!document.hidden && token) poll(); }, 3000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) poll(); });
+</script>
+</body>
+</html>

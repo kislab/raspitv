@@ -56,6 +56,7 @@ Item {
     }
     Dialog { anchors.fill: parent; visible: !!s.dialog }
     Osk { anchors.fill: parent; visible: !!s.osk }
+    PhonePair { anchors.fill: parent }
     Screensaver { anchors.fill: parent }
     VolumeOsd { anchors.fill: parent }
     Toast { anchors.fill: parent }

@@ -100,6 +100,21 @@
         "jellyfin.js"
       ],
       "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "http://*/*",
+        "https://*/*"
+      ],
+      "exclude_matches": [
+        "https://www.netflix.com/*",
+        "https://www.disneyplus.com/*",
+        "https://www.primevideo.com/*"
+      ],
+      "js": [
+        "phone-text.js"
+      ],
+      "run_at": "document_idle"
     }
   ]
 }

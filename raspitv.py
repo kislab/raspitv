@@ -34,11 +34,12 @@ except ImportError:
              "qml-module-qtquick-window2 qml-module-qtgraphicaleffects")
 
 import network
+import phone
 import remote
 import remote_input
 import settings as cfg
 from jellyfin_ui import JellyfinUI
-from profiles_ui import AccountsUI
+from profiles_ui import MAX_LEN, PIN_LEN, AccountsUI
 
 ROOT = Path(__file__).resolve().parent
 CACHE = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "raspitv" / "logos"
@@ -123,6 +124,8 @@ class Home(AccountsUI, JellyfinUI, QObject):
         self.sleep_min = 0             # Sleep-Timer: gewählte Minuten (0 = aus)
         self.sleep_at = None           # … und wann er abläuft (monotonic)
         self.sleep_warned = False      # Warnung „gleich wird ausgeschaltet“ ist zu sehen
+        self.phone = None              # Handy als Fernbedienung (phone.PhoneServer, in main() gesetzt)
+        self.phone_pair = None         # Seite „Handy verbinden“: {"url", "code", "qr"}
         self.toast = None              # Hinweis oben: {"text", "seq"}
         self.toast_until = 0.0
         self.dialog = None            # {"text", "buttons": [(label, fn)], "index", "app"?}
@@ -172,7 +175,7 @@ class Home(AccountsUI, JellyfinUI, QObject):
             "allApps": [self.info[a["id"]] for a in self.all_apps],
             "hero": self.focused_app()["id"],
             "menu": menu, "dialog": dialog, "jf": self.jf_state(), "vol": self.vol,
-            "saver": self.saver, "sleep": self.sleep_left(), "toast": self.toast,
+            "saver": self.saver, "sleep": self.sleep_left(), "toast": self.toast, "phone": self.phone_pair,
             "covered": bool(self.running and time.monotonic() - self.started > COVERED_AFTER),
             "settings": {"cats": [{k: c[k] for k in ("label", "icon", "desc")} for c in self.cats],
                          "cat": self.cat, "pane": self.pane, "item": self.item, "sub": self.sub_info(),
@@ -274,6 +277,9 @@ class Home(AccountsUI, JellyfinUI, QObject):
         if self.running:
             if key == "home":  # alle anderen Tasten gehören der Seite im Player
                 self.go_home()
+        elif self.phone_pair:
+            if key in ("back", "ok", "home"):
+                self.close_phone_pair()
         elif self.dialog:
             self.dialog_key(key)
         elif self.osk:
@@ -650,6 +656,70 @@ class Home(AccountsUI, JellyfinUI, QObject):
         if self.mpv.running():
             self.mpv.show_toast("")
 
+    # ---------- Handy als Fernbedienung ----------
+
+    def set_phone_remote(self, on):
+        self.set("phone_remote", on)
+        if not on:
+            self.phone.stop()
+        elif not self.phone.start():
+            self.notice("Handy-Fernbedienung ließ sich nicht starten", None)
+            self.dialog["sub"] = f"Port {phone.PORT} ist belegt"
+
+    def open_phone_pair(self):
+        if not self.settings["phone_remote"]:
+            self.set_phone_remote(True)
+        if not self.phone.running():
+            return
+        url = f"http://{cfg.ip_address()}:{phone.PORT}"
+        matrix = phone.qr_matrix(url)
+        self.phone_pair = {"url": url, "code": self.phone.new_code(),
+                           "qr": ["".join("1" if c else "0" for c in row) for row in matrix] if matrix else []}
+        self.phone.on_paired = lambda: self.bgDone.emit(self.phone_paired)
+
+    def close_phone_pair(self):
+        self.phone_pair = None
+        self.phone.code = self.phone.on_paired = None
+        if self.view == "settings":
+            self.build_items()
+            self.items = self.cats[self.cat]["items"]
+
+    def phone_paired(self):
+        self.close_phone_pair()
+        self.show_toast("Handy verbunden – es ist jetzt eine Fernbedienung")
+
+    def add_phone_token(self, token):
+        """Aus dem Server-Thread: sofort gültig, gespeichert wird im Hauptthread."""
+        self.settings["phone_tokens"] = (self.settings["phone_tokens"] + [token])[-phone.MAX_TOKENS:]
+        self.bgDone.emit(self.save_settings)
+
+    def forget_phones(self):
+        self.set("phone_tokens", [])
+        self.build_items()
+        self.items = self.cats[self.cat]["items"]
+        self.notice("Alle Handys entfernt", None)
+        self.dialog["sub"] = "Zum erneuten Verbinden „Handy verbinden“ wählen"
+
+    def phone_state(self):
+        """Für die Handy-Seite (Server-Thread): ist gerade ein Textfeld offen?"""
+        osk, running = self.osk, self.running
+        return {"typing": bool(osk), "title": osk["title"] if osk else "",
+                "app": running["name"] if running else "Jellyfin" if self.view == "jellyfin" else ""}
+
+    def phone_text(self, text, submit):
+        """Text vom Handy: in die Bildschirmtastatur von RaspiTV bzw. in das Textfeld der Seite im Player."""
+        text = text.replace("\n", " ").replace("\r", "")
+        o = self.osk
+        if o:
+            if o["mode"] == "pin":
+                text = "".join(c for c in text if c.isdigit())
+            o["value"] = text[:MAX_LEN[o["mode"]]]
+            o["error"] = ""
+            if submit or (o["mode"] == "pin" and len(o["value"]) == PIN_LEN):
+                o["done"](o["value"])
+        elif self.player.running():
+            remote.notify(f"text:{int(submit)}:{text}")
+
     # ---------- Einstellungen ----------
 
     def open_settings(self):
@@ -806,6 +876,13 @@ class Home(AccountsUI, JellyfinUI, QObject):
                  {"kind": "action", "label": "WLAN", "hint": network.wifi_current() or
                   ("nicht verbunden" if network.wifi_enabled() else "aus"), "run": lambda: self.open_sub("wifi")},
                  {"kind": "action", "label": "Bluetooth", "hint": self.bt_hint(), "run": lambda: self.open_sub("bt")},
+                 {"kind": "header", "label": "Handy"},
+                 {"kind": "toggle", "label": "Handy als Fernbedienung", "value": lambda: s["phone_remote"],
+                  "change": lambda step: self.set_phone_remote(not s["phone_remote"])},
+                 {"kind": "action", "label": "Handy verbinden", "hint": "QR-Code", "run": self.open_phone_pair},
+                 {"kind": "action", "label": "Verbundene Handys entfernen",
+                  "hint": f"{len(s['phone_tokens'])} verbunden" if s["phone_tokens"] else "keine",
+                  "run": self.forget_phones},
                  {"kind": "header", "label": "Start und Updates"},
                  {"kind": "toggle", "label": "Beim Hochfahren starten", "value": cfg.autostart_enabled,
                   "change": lambda step: cfg.set_autostart(not cfg.autostart_enabled())},
@@ -1145,6 +1222,17 @@ def main():
     agent = network.BtAgent(home.bt_allow)
     # Schlafende Fernbedienung beim nächsten Tastendruck sofort wieder verbinden
     network.RemoteKeeper(lambda: home.remote_macs, home.bt_busy)
+    # Handy als Fernbedienung (Webseite im Heimnetz)
+    def phone_key(key):
+        if key in ("volumeup", "volumedown", "mute", "playpause"):
+            home.remote_extra(key)
+        else:
+            remote.press(key)  # wie eine Bluetooth-Fernbedienung: an RaspiTV und an die Seite im Player
+    home.phone = phone.PhoneServer(phone_key, lambda text, submit: home.bgDone.emit(lambda: home.phone_text(text, submit)),
+                                   home.phone_state, lambda: home.settings["phone_tokens"], home.add_phone_token)
+    if home.settings["phone_remote"]:
+        home.phone.start()
+    app.aboutToQuit.connect(home.phone.stop)
     # Neue Bluetooth-/USB-Audiogeräte automatisch verwenden (Einstellungen → Ton)
     threading.Thread(target=home.watch_audio, daemon=True).start()
 

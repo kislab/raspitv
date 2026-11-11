@@ -29,6 +29,8 @@ DEFAULTS = {
     "audio_output": "",      # zuletzt selbst gewählter Ausgang (node.name) – zurück dorthin, wenn ein Gerät geht
     "saver_min": 10,         # Bildschirmschoner nach so vielen Minuten ohne Tastendruck (0 = aus)
     "screen_off_min": 30,    # Bildschirm ausschalten nach so vielen Minuten ohne Tastendruck (0 = nie)
+    "phone_remote": True,    # Handy als Fernbedienung (Webseite im Heimnetz, phone.py)
+    "phone_tokens": [],      # Schlüssel gekoppelter Handys
 }
 
 SLEEP_TIMES = [0, 15, 30, 45, 60, 90, 120]    # Sleep-Timer (Minuten, 0 = aus)
