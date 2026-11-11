@@ -160,7 +160,7 @@ class Client:
     # ---------- Wiedergabe ----------
 
     def playback(self, item_id):
-        """(Stream-URL, MediaSourceId, PlaySessionId) für Direktwiedergabe in mpv."""
+        """(Stream-URL, MediaSourceId, PlaySessionId, Videospur) für Direktwiedergabe in mpv."""
         info = self.post(f"/Items/{item_id}/PlaybackInfo", {"UserId": self.user_id}, UserId=self.user_id)
         sources = info.get("MediaSources") or []
         if not sources:
@@ -170,7 +170,8 @@ class Client:
                                          "ApiKey": self.token, "PlaySessionId": info.get("PlaySessionId", "")})
         url = f"{self.url}/Videos/{item_id}/stream?{params}"
         self.check_stream(url)
-        return url, source["Id"], info.get("PlaySessionId", "")
+        video = next((s for s in source.get("MediaStreams") or [] if s.get("Type") == "Video"), {})
+        return url, source["Id"], info.get("PlaySessionId", ""), video
 
     def check_stream(self, url):
         """Kurz prüfen, ob der Server die Datei liefert – sonst eine verständliche Meldung statt stummem Abbruch."""
@@ -250,38 +251,100 @@ def detail(client, item):
 
 # ---------- mpv ----------
 
+def video_output(video):
+    """mpv-Schalter für Dekodierung und Bildausgabe, passend zur Videospur.
+
+    H.264 bis 1080p (8 Bit) kann der Hardware-Dekoder des Pi 4. Die Bilder gehen dann ohne Umweg
+    direkt an den Bildschirm (dmabuf-wayland): gemessen 0 statt ~95 verworfene Bilder je 10 s bei
+    ~20 % CPU. Mit Umkopieren über die GPU (v4l2m2m-copy + vo=gpu) ruckelt es deutlich.
+    dmabuf-wayland zeigt aber nur Hardware-Bilder – alles andere läuft über den GPU-Ausgabeweg.
+    """
+    codec = (video.get("Codec") or "").lower()
+    bits = video.get("BitDepth") or 8
+    height = video.get("Height") or 0
+    if codec in ("h264", "avc") and bits <= 8 and height <= 1088:
+        return ["--hwdec=v4l2m2m", "--vo=dmabuf-wayland"]
+    return ["--hwdec=drm,v4l2m2m-copy,auto-safe", "--vo=gpu", "--gpu-context=wayland"]
+
+
+def player_info(item, fallback_title):
+    """Texte für die Player-Leiste: Serienname, Titel, Zusatzzeile."""
+    if not item:
+        return {"series": "", "title": fallback_title, "meta": ""}
+    if item.get("Type") == "Episode":
+        s, e = item.get("ParentIndexNumber"), item.get("IndexNumber")
+        meta = " · ".join(p for p in (f"Staffel {s}" if s is not None else "", f"Folge {e}" if e is not None else "") if p)
+        return {"series": item.get("SeriesName", ""), "title": item.get("Name", fallback_title), "meta": meta}
+    facts = [str(item["ProductionYear"]) if item.get("ProductionYear") else "",
+             f"FSK {item['OfficialRating']}" if item.get("OfficialRating") else ""]
+    return {"series": "", "title": item.get("Name", fallback_title), "meta": " · ".join(f for f in facts if f)}
+
+
 class MpvPlayer:
     """Spielt einen Jellyfin-Stream mit mpv im Vollbild ab und meldet den Fortschritt an den Server.
 
-    Steuerung über mpvs JSON-IPC: OK = Pause, ◀/▶ = 10 s zurück/vor, ▲/▼ = 60 s vor/zurück,
-    Zurück = beenden. `on_end(sekunden)` läuft (im Hintergrund-Thread), wenn mpv beendet ist.
+    Die Bedienleiste (jellyfin_osd.py) zeichnet mpv selbst über das Video. Tasten: OK = Pause,
+    ◀/▶ = 10 s, ▲/▼ = 1 min spulen, Menü = Ton & Untertitel, Zurück = Leiste ausblenden bzw. beenden.
+    `on_end(sekunden)` läuft (im Hintergrund-Thread), wenn mpv beendet ist.
     """
+
+    SHOW_SECONDS = 4.0  # so lange bleibt die Leiste nach einem Tastendruck stehen
 
     def __init__(self):
         self.proc = None
         self.sock_path = os.path.join(tempfile.gettempdir(), f"raspitv-mpv-{os.getpid()}.sock")
         self.position = 0.0
         self.paused = False
+        self.info = {}
+        self.overlay_sock = None
+        self.ui_lock = threading.Lock()
+        self.reset_ui()
+
+    def reset_ui(self):
+        self.shown_until = 0.0
+        self.menu_rows = None   # offenes Ton-/Untertitelmenü
+        self.menu_index = 0
+        self.seek_sum = 0       # gesammelte Sprünge für die Anzeige "+30 s"
+        self.seek_at = 0.0
+        self.overlay_on = False
+        self.dirty = True
 
     def running(self):
         return self.proc is not None and self.proc.poll() is None
 
     def play(self, client, item_id, title, start, on_end):
-        url, source_id, session_id = client.playback(item_id)
+        url, source_id, session_id, video = client.playback(item_id)
         self.stop()
+        time.sleep(0.2)  # alte Leisten-Schleife beenden lassen
+        self.close_overlay_sock()
         try:
             os.unlink(self.sock_path)
         except OSError:
             pass
         args = ["mpv", "--fullscreen", "--force-window=immediate", "--keep-open=no",
-                "--hwdec=drm,v4l2m2m-copy,auto-safe", "--vo=gpu", "--gpu-context=wayland", f"--input-ipc-server={self.sock_path}",
-                "--osd-level=1", "--osd-font=Nunito Sans", "--osd-font-size=40", f"--title={title}",
+                *video_output(video), f"--input-ipc-server={self.sock_path}",
+                # mpvs eigene Einblendungen aus – die Leiste kommt aus jellyfin_osd.py
+                "--osd-level=1", "--osd-on-seek=no", "--osd-font=Nunito Sans", "--cursor-autohide=always",
+                "--sub-font=Nunito Sans", "--sub-bold=yes", "--sub-font-size=46", f"--title={title}",
                 "--cache=yes", "--demuxer-max-bytes=150MiB", "--slang=de,ger,deu", "--alang=de,ger,deu,en,eng",
                 "--sub-auto=no", f"--start={max(start, 0):.1f}", url]
         log = open(os.path.join(tempfile.gettempdir(), "raspitv-mpv.log"), "w")  # nur Fehler, ohne Adresse
         self.proc = subprocess.Popen(args + ["--msg-level=all=warn"], stdout=log, stderr=log)
         self.position, self.paused = start, False
+        self.info = player_info(None, title)
+        with self.ui_lock:
+            self.reset_ui()
+            self.shown_until = time.monotonic() + self.SHOW_SECONDS + 2  # zu Beginn Titel zeigen
         client.report("start", item_id, source_id, session_id, start)
+        threading.Thread(target=self.overlay_loop, args=(self.proc,), daemon=True).start()
+
+        def details():
+            try:
+                self.info = player_info(client.item(item_id), title)
+                self.dirty = True
+            except JellyfinError:
+                pass
+        threading.Thread(target=details, daemon=True).start()
 
         def watch():
             last = 0.0
@@ -301,17 +364,26 @@ class MpvPlayer:
         threading.Thread(target=watch, daemon=True).start()
 
     def command(self, *args):
-        """Befehl an mpv schicken; Antwort ("data") oder None."""
+        """Befehl an mpv schicken; Antwort ("data") oder None. Ein einzelnes dict = Befehl mit Namen."""
+        cmd = args[0] if len(args) == 1 and isinstance(args[0], dict) else list(args)
         try:
             with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
                 s.settimeout(1)
                 s.connect(self.sock_path)
-                s.sendall((json.dumps({"command": list(args)}) + "\n").encode())
-                answer = s.recv(65536).decode(errors="replace").splitlines()
-                for line in answer:
-                    msg = json.loads(line)
-                    if "error" in msg:
-                        return msg.get("data")
+                s.sendall((json.dumps({"command": cmd}) + "\n").encode())
+                buf = b""
+                while True:  # Antworten können größer als ein Paket sein (Spurliste)
+                    chunk = s.recv(65536)
+                    if not chunk:
+                        break
+                    buf += chunk
+                    for line in buf.decode(errors="replace").splitlines():
+                        try:
+                            msg = json.loads(line)
+                        except ValueError:
+                            continue
+                        if "error" in msg:
+                            return msg.get("data")
         except (OSError, ValueError):
             return None
         return None
@@ -319,21 +391,156 @@ class MpvPlayer:
     def query(self, prop):
         return self.command("get_property", prop)
 
+    # ---------- Bedienleiste ----------
+
+    def visible(self):
+        return bool(self.menu_rows) or self.paused or time.monotonic() < self.shown_until
+
+    def show(self):
+        self.shown_until = time.monotonic() + self.SHOW_SECONDS
+        self.dirty = True
+
+    def render(self):
+        import jellyfin_osd as osd
+        if self.menu_rows:
+            events = osd.menu(self.menu_rows, self.menu_index)
+        else:
+            pos = self.query("time-pos")
+            if isinstance(pos, (int, float)):
+                self.position = pos
+            duration = self.query("duration") or 0
+            cached = self.query("demuxer-cache-time") or 0
+            hint = ""
+            if self.seek_sum and time.monotonic() - self.seek_at < 1.5:
+                hint = f"{'+' if self.seek_sum > 0 else '−'}{osd.clock(abs(self.seek_sum)) if abs(self.seek_sum) >= 60 else f'{abs(self.seek_sum)} s'}"
+            events = osd.controls(self.info, self.position, duration, self.paused, cached, hint)
+        self.overlay_command({"name": "osd-overlay", "id": 1, "format": "ass-events", "data": "\n".join(events),
+                              "res_x": osd.W, "res_y": osd.H, "z": 10})
+        self.overlay_on = True
+
+    def overlay_command(self, cmd):
+        """Einblendungen gehören in mpv zur Verbindung, die sie anlegt, und verschwinden mit ihr –
+        deshalb läuft die Leiste über eine eigene, dauerhaft offene Verbindung."""
+        for _ in range(2):
+            try:
+                if not self.overlay_sock:
+                    self.overlay_sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+                    self.overlay_sock.settimeout(1)
+                    self.overlay_sock.connect(self.sock_path)
+                self.overlay_sock.sendall((json.dumps({"command": cmd}) + "\n").encode())
+                return
+            except OSError:
+                self.close_overlay_sock()
+
+    def close_overlay_sock(self):
+        if self.overlay_sock:
+            try:
+                self.overlay_sock.close()
+            except OSError:
+                pass
+        self.overlay_sock = None
+
+    def overlay_loop(self, proc):
+        """Zeichnet die Leiste, solange sie sichtbar ist (Zeit läuft mit), und blendet sie wieder aus."""
+        last = 0.0
+        while proc.poll() is None:
+            paused = self.query("pause")
+            if isinstance(paused, bool) and paused != self.paused:
+                self.paused, self.dirty = paused, True
+            with self.ui_lock:
+                if self.visible():
+                    if self.dirty or time.monotonic() - last > 0.5:
+                        self.dirty = False
+                        self.render()
+                        last = time.monotonic()
+                elif self.overlay_on:
+                    self.overlay_command({"name": "osd-overlay", "id": 1, "format": "none", "data": ""})
+                    self.overlay_on = False
+            self.drain_overlay_sock()
+            time.sleep(0.1)
+        self.close_overlay_sock()
+
+    def drain_overlay_sock(self):
+        """Antworten und Ereignisse auf der Leisten-Verbindung verwerfen, damit nichts aufläuft."""
+        if not self.overlay_sock:
+            return
+        try:
+            self.overlay_sock.setblocking(False)
+            while self.overlay_sock.recv(65536):
+                pass
+        except (BlockingIOError, InterruptedError):
+            pass
+        except OSError:
+            self.close_overlay_sock()
+            return
+        finally:
+            if self.overlay_sock:
+                self.overlay_sock.settimeout(1)
+
+    def open_menu(self):
+        import jellyfin_osd as osd
+        tracks = self.query("track-list") or []
+        self.menu_rows = osd.menu_entries(tracks)
+        # auf die gewählte Tonspur
+        self.menu_index = next((i for i, r in enumerate(self.menu_rows) if r[0] == "item" and r[2]), 1)
+        self.dirty = True
+
+    def menu_key(self, key):
+        rows = self.menu_rows
+        if key in ("up", "down"):
+            step = -1 if key == "up" else 1
+            i = self.menu_index + step
+            while 0 <= i < len(rows) and rows[i][0] == "header":
+                i += step
+            if 0 <= i < len(rows):
+                self.menu_index = i
+        elif key == "ok":
+            prop, value = rows[self.menu_index][3]
+            self.command("set_property", prop, value)
+            time.sleep(0.15)
+            self.open_menu()  # Häkchen neu einlesen (key() stellt die Zeile wieder her)
+            return
+        elif key in ("back", "menu"):
+            self.menu_rows = None
+            self.show()
+        self.dirty = True
+
+    def seek(self, seconds):
+        now = time.monotonic()
+        self.seek_sum = (self.seek_sum if now - self.seek_at < 1.5 and (self.seek_sum > 0) == (seconds > 0) else 0) + seconds
+        self.seek_at = now
+        self.command("seek", seconds, "relative+exact")
+        self.show()
+
     def key(self, key):
         """Taste der Fernbedienung während der Wiedergabe."""
-        if key == "ok":
-            self.command("cycle", "pause")
-            self.command("show-progress")
-        elif key in ("left", "right"):
-            self.command("seek", -10 if key == "left" else 10, "relative")
-            self.command("show-progress")
-        elif key in ("up", "down"):
-            self.command("seek", 60 if key == "up" else -60, "relative")
-            self.command("show-progress")
-        elif key == "playpause":
-            self.command("cycle", "pause")
-        elif key in ("back", "home"):
-            self.stop()
+        with self.ui_lock:
+            if self.menu_rows:
+                index = self.menu_index
+                self.menu_key(key)
+                if key == "ok":
+                    self.menu_index = index
+                return
+            if key in ("ok", "playpause"):
+                self.command("cycle", "pause")
+                self.paused = not self.paused
+                self.show()
+            elif key in ("left", "right"):
+                self.seek(-10 if key == "left" else 10)
+            elif key in ("up", "down"):
+                self.seek(60 if key == "up" else -60)
+            elif key == "menu":
+                self.open_menu()
+            elif key == "back":
+                if self.visible() and not self.paused:
+                    self.shown_until = 0  # erst nur die Leiste ausblenden
+                    return
+                self.stop_locked()
+            elif key == "home":
+                self.stop_locked()
+
+    def stop_locked(self):
+        threading.Thread(target=self.stop, daemon=True).start()
 
     def stop(self):
         if self.running():

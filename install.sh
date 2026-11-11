@@ -30,10 +30,15 @@ MISSING=""
 for p in $PACKAGES; do
   dpkg -s "$p" >/dev/null 2>&1 || MISSING="$MISSING $p"
 done
+STATE="${XDG_CONFIG_HOME:-$HOME/.config}/raspitv"
 if [ -n "$MISSING" ]; then
   say "Installiere fehlende Pakete:$MISSING"
   sudo apt-get update
   sudo apt-get install -y $MISSING
+  # merken, was RaspiTV nachinstalliert hat – nur das entfernt die Deinstallation wieder
+  mkdir -p "$STATE"
+  for p in $MISSING; do echo "$p"; done >> "$STATE/installed-packages"
+  sort -u -o "$STATE/installed-packages" "$STATE/installed-packages"
 else
   say "Alle Pakete sind schon installiert"
 fi
@@ -71,6 +76,8 @@ printf '%s\n' "$ENTRY" > "$DESKTOP_DIR/RaspiTV.desktop"
 chmod +x "$DESKTOP_DIR/RaspiTV.desktop"
 # Als vertrauenswürdig markieren, damit der Desktop nicht bei jedem Doppelklick nachfragt
 gio set "$DESKTOP_DIR/RaspiTV.desktop" metadata::trusted true 2>/dev/null || true
+say "Lege Symbol zum Deinstallieren auf dem Desktop an"
+"$DIR/uninstall.sh" --desktop-icon
 update-desktop-database "$APPS" 2>/dev/null || true
 
 # 4. Autostart: Terminal öffnen und darin RaspiTV laden (mit Update vorher)

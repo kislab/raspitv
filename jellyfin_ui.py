@@ -10,7 +10,7 @@ import time
 import jellyfin as jf
 import settings as cfg
 
-GRID_COLS = 6
+GRID_COLS = 8
 
 
 class JellyfinUI:
@@ -452,17 +452,17 @@ class JellyfinUI:
             return self.jf_close()
         if key == "menu":
             return
-        if j["focus"] == "nav":
+        if j["focus"] == "nav":  # Leiste oben: ◀ ▶ wählen, OK öffnen, ▼ in den Inhalt
             nav = j["nav"]
-            if key in ("up", "down") and nav:
-                j["navIndex"] = min(max(j["navIndex"] + (-1 if key == "up" else 1), 0), len(nav) - 1)
+            if key in ("left", "right") and nav:
+                j["navIndex"] = min(max(j["navIndex"] + (-1 if key == "left" else 1), 0), len(nav) - 1)
             elif key == "ok" and nav:
                 self.jf_nav_select(j["navIndex"])
                 if j["page"] == "search":
                     self.jf_ask_search()
                 else:
                     j["focus"] = "content"
-            elif key == "right":
+            elif key == "down":
                 j["focus"] = "content"
             elif key == "back":
                 self.jf_close()
@@ -484,16 +484,14 @@ class JellyfinUI:
         j = self.jf
         rows = j["rows"]
         if not rows:
-            return self.jf_to_nav() if key in ("left", "back") else None
-        if key == "back":
+            return self.jf_to_nav() if key in ("up", "back") else None
+        if key == "back" or (key == "up" and j["row"] == 0):
             return self.jf_to_nav()
         if key in ("up", "down"):
             r = min(max(j["row"] + (-1 if key == "up" else 1), 0), len(rows) - 1)
             j["row"], j["col"] = r, min(j["col"], len(rows[r]["items"]) - 1)
         elif key == "left":
-            if j["col"] == 0:
-                return self.jf_to_nav()
-            j["col"] -= 1
+            j["col"] = max(j["col"] - 1, 0)
         elif key == "right":
             j["col"] = min(j["col"] + 1, len(rows[j["row"]]["items"]) - 1)
         elif key == "ok":
@@ -518,18 +516,16 @@ class JellyfinUI:
     def jf_grid_key(self, key):
         j = self.jf
         grid = j["grid"]
-        if key == "back" or (key == "left" and j["col"] == 0) or not grid:
+        if key == "back" or (key == "up" and j["row"] == 0) or not grid:
             if key == "ok" and j["page"] == "search":
                 return self.jf_ask_search()
-            return self.jf_to_nav() if key in ("left", "back") else None
+            return self.jf_to_nav() if key in ("up", "back") else None
         index = j["row"] * GRID_COLS + j["col"]
         if key == "left":
-            index -= 1
+            index = index - 1 if index % GRID_COLS else index
         elif key == "right":
             index = min(index + 1, len(grid) - 1) if (index + 1) % GRID_COLS else index
         elif key == "up":
-            if index < GRID_COLS and j["page"] == "search":
-                return self.jf_ask_search()
             index = max(index - GRID_COLS, index % GRID_COLS)
         elif key == "down":
             index = min(index + GRID_COLS, len(grid) - 1) if index + GRID_COLS < len(grid) or \
@@ -558,25 +554,24 @@ class JellyfinUI:
                 self.jf_to_nav()
             return
         if d["type"] != "Series":  # Film oder Folge: Knopfreihe
+            if key == "up":
+                return self.jf_to_nav()
             if key in ("left", "right"):
                 b = j["button"] + (-1 if key == "left" else 1)
-                if b < 0:
-                    return self.jf_to_nav()
-                j["button"] = min(b, len(j["buttons"]) - 1)
+                j["button"] = min(max(b, 0), len(j["buttons"]) - 1)
             elif key == "ok" and j["buttons"]:
                 start = d["resume"] if j["buttons"][j["button"]]["id"] == "resume" else 0.0
                 name = f"{d['series']} – {d['title']}" if d["series"] else d["title"]
                 self.jf_play(d["id"], name, start)
             return
         # Serie: Zone 0 = Staffeln, Zone 1 = Folgen
+        if key == "up" and j["zone"] == 0:
+            return self.jf_to_nav()
         if key in ("up", "down"):
             j["zone"] = 0 if key == "up" else (1 if j["episodes"] else 0)
         elif j["zone"] == 0:
             if key in ("left", "right") and j["seasons"]:
-                s = j["season"] + (-1 if key == "left" else 1)
-                if s < 0:
-                    return self.jf_to_nav()
-                s = min(s, len(j["seasons"]) - 1)
+                s = min(max(j["season"] + (-1 if key == "left" else 1), 0), len(j["seasons"]) - 1)
                 if s != j["season"]:
                     j["season"], j["episodes"], j["episode"] = s, [], 0
                     self.jf_load_episodes()
@@ -586,9 +581,7 @@ class JellyfinUI:
             eps = j["episodes"]
             if key in ("left", "right") and eps:
                 e = j["episode"] + (-1 if key == "left" else 1)
-                if e < 0:
-                    return self.jf_to_nav()
-                j["episode"] = min(e, len(eps) - 1)
+                j["episode"] = min(max(e, 0), len(eps) - 1)
             elif key == "ok" and eps:
                 ep = eps[j["episode"]]
                 start = ep.get("resume", 0) if ep.get("resume", 0) > 30 else 0.0
@@ -597,7 +590,7 @@ class JellyfinUI:
     def jf_settings_key(self, key):
         j = self.jf
         items = j["items"]
-        if key in ("back", "left"):
+        if key == "back":
             return self.jf_to_nav()
         if key in ("up", "down"):
             step = -1 if key == "up" else 1
@@ -606,5 +599,7 @@ class JellyfinUI:
                 i += step
             if 0 <= i < len(items):
                 j["item"] = i
+            elif key == "up":
+                return self.jf_to_nav()  # ganz oben: zur Leiste
         elif key == "ok":
             self.jf_setting(items[j["item"]]["id"])

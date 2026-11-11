@@ -10,8 +10,11 @@ Mediacenter für den Raspberry Pi 4 im Stil von Google TV – bedienbar mit der 
 - **Player**: Chromium im Kioskmodus (nur für DRM-Videos), mit eigener Erweiterung `tv-extension/`,
   die Netflix, Disney+ und Prime Video wie die jeweilige TV-App aussehen lässt.
 - **Jellyfin** als eigene App in RaspiTV (`jellyfin.py`, `jellyfin_ui.py`, `qml/Jellyfin.qml`): Start (Weiterschauen,
-  Nächste Folgen, Neu in …), Bibliotheken, Suche, Detailseite mit Staffeln/Folgen; Abspielen mit mpv
-  (Hardware-Dekodierung). Jellyfin-Einstellungen in der App: Serveradresse ändern oder im Heimnetz suchen,
+  Nächste Folgen, Neu in …), Bibliotheken, Suche, Detailseite mit Staffeln/Folgen; Leiste oben (◀ ▶ wählen,
+  ▼ in den Inhalt, ▲ zurück). Abspielen mit mpv: H.264 per Hardware-Dekoder direkt auf den Bildschirm
+  (`vo=dmabuf-wayland`, ruckelfrei), eigene Player-Leiste (`jellyfin_osd.py`: Titel, Fortschritt, Restzeit,
+  „endet um“; OK = Pause, ◀ ▶ = 10 s, ▲ ▼ = 1 min, Menü = Ton & Untertitel, Zurück = Leiste weg bzw. beenden).
+  Jellyfin-Einstellungen in der App: Serveradresse ändern oder im Heimnetz suchen,
   Anmelden per Quick Connect oder Name/Passwort (je RaspiTV-Konto).
   Anmelden ohne Tastatur: „Quick Connect verwenden“ wählen und den Code in der Jellyfin-App am Handy bestätigen.
 - **Konten**: „Wer schaut?“ wie bei Google TV. Jedes Konto hat eigene Logins bei Netflix, Disney+,
@@ -44,6 +47,15 @@ Derselbe Befehl aktualisiert eine bestehende Installation.
 Der Installer richtet außerdem das **RaspiTV-Bootbild** ein (Logo statt Regenbogen und Raspberry-Pi-Bild,
 Plymouth-Thema `boot/plymouth/`). Ohne: `… | bash -s -- --no-bootlogo`; rückgängig:
 `sudo ~/raspitv/boot/install-bootlogo.sh --remove`. Das Logo zeichnet `boot/make-logo.py`.
+
+## Deinstallieren
+
+Doppelklick auf **„RaspiTV deinstallieren“** auf dem Desktop (oder `~/raspitv/uninstall.sh`). Nach der
+Bestätigung mit „ja“ entfernt es alles, was der Installer angelegt hat, und stellt das System wieder her:
+Autostart, Startmenü-Eintrag und Desktop-Symbole, Bootbild (vorheriges Plymouth-Thema, `cmdline.txt`,
+`config.txt`), Bluetooth-Einstellung (`/etc/bluetooth/main.conf` aus der Sicherung), die von RaspiTV
+nachinstallierten Pakete (der Installer merkt sie sich in `~/.config/raspitv/installed-packages`), alle
+Einstellungen, Konten und Logins sowie `~/raspitv`. Gekoppelte Bluetooth-Geräte und WLAN bleiben.
 
 ## Updates
 

@@ -1,4 +1,4 @@
-// Jellyfin als eigene App: Leiste links, rechts Startseite (Reihen), Bibliothek/Suche (Raster),
+// Jellyfin als eigene App: Leiste oben, darunter Startseite (Reihen), Bibliothek/Suche (Raster),
 // Detailseite (Film, Folge oder Serie mit Staffeln und Folgen) und die Jellyfin-Einstellungen.
 import QtQuick 2.15
 
@@ -7,9 +7,12 @@ Item {
     readonly property var j: app.s.jf
     readonly property bool free: app.free
     readonly property color accent: "#aa5cc3"
-    readonly property real railW: 19 * app.u
-    readonly property real contentX: railW + 3 * app.u
-    readonly property real contentW: width - contentX - 3 * app.u
+    readonly property real barH: 6.4 * app.u          // Höhe der Leiste oben
+    readonly property real contentX: 3 * app.u
+    readonly property real contentW: width - 2 * contentX
+    // Startseite ohne eigene Überschrift (die Leiste zeigt „Start“), sonst Titel unter der Leiste
+    readonly property bool titled: !!j && j.page !== "home" && j.page !== "detail"
+    readonly property real contentY: barH + (titled ? 5.4 * app.u : 1.2 * app.u)
 
     Rectangle { anchors.fill: parent; color: app.bg }
 
@@ -45,75 +48,18 @@ Item {
         }
     }
 
-    // ---------- Leiste ----------
-    Rectangle {
-        width: page.railW; height: parent.height
-        color: "#13151b"
-        Row {
-            x: 2.4 * app.u; y: 2.6 * app.u
-            spacing: 0.7 * app.u
-            Rectangle {
-                width: 2.4 * app.u; height: width; radius: 0.6 * app.u
-                anchors.verticalCenter: parent.verticalCenter
-                gradient: Gradient {
-                    GradientStop { position: 0; color: page.accent }
-                    GradientStop { position: 1; color: "#00a4dc" }
-                }
-                Icon { anchors.centerIn: parent; width: 1.5 * app.u; name: "library"; color: "white" }
-            }
-            Label { text: "Jellyfin"; size: 1.8 * app.u; weight: Font.DemiBold; color: "white" }
-        }
-        Column {
-            x: 1.3 * app.u; y: 8.5 * app.u
-            spacing: 0.35 * app.u
-            Repeater {
-                model: page.j ? page.j.nav.length : 0
-                Pill {
-                    readonly property var entry: page.j.nav[index]
-                    readonly property bool selected: index === page.j.navIndex
-                    readonly property bool hot: selected && page.j.focus === "nav" && page.free
-                    width: page.railW - 2.6 * app.u; height: 3.1 * app.u
-                    focused: hot
-                    idle: selected ? Qt.rgba(1, 1, 1, 0.09) : "transparent"
-                    readonly property color fg: hot ? app.dark : selected ? "white" : app.soft
-                    Icon {
-                        x: 1.9 * app.u - width / 2
-                        anchors.verticalCenter: parent.verticalCenter
-                        width: 1.35 * app.u
-                        name: entry.icon
-                        color: parent.fg
-                        hole: parent.hot ? app.text : "#13151b"
-                    }
-                    Label {
-                        x: 3.8 * app.u; width: parent.width - 4.5 * app.u; height: parent.height
-                        text: entry.label
-                        size: 1.05 * app.u
-                        weight: selected ? Font.DemiBold : Font.Normal
-                        color: parent.fg
-                    }
-                }
-            }
-        }
-        Label {
-            x: 2.4 * app.u; y: parent.height - 3.2 * app.u; height: 1.6 * app.u
-            text: "Zurück: Leiste · Home: RaspiTV"
-            size: 0.8 * app.u
-            color: app.muted
-        }
-    }
-
     // ---------- Kopf des Inhalts ----------
     Label {
-        x: page.contentX; y: 2.4 * app.u; height: 3.4 * app.u
+        x: page.contentX; y: page.barH + 0.8 * app.u; height: 3.4 * app.u
         width: page.contentW
-        visible: !!page.j && page.j.page !== "detail"
+        visible: page.titled
         text: page.j ? page.j.title : ""
         size: 2.3 * app.u
         weight: Font.DemiBold
         color: "white"
     }
     Label {
-        x: page.contentX; y: 5.9 * app.u; height: 1.6 * app.u
+        x: page.contentX; y: page.contentY - 1.9 * app.u; height: 1.6 * app.u
         width: page.contentW
         visible: !!page.j && (page.j.loading || page.j.error !== "") && page.j.page !== "detail"
         text: page.j ? (page.j.loading ? "Lädt …" : page.j.error) : ""
@@ -124,7 +70,7 @@ Item {
     // ---------- Startseite: Reihen ----------
     Item {
         id: rows
-        x: page.contentX - 1 * app.u; y: 8 * app.u
+        x: page.contentX - 1 * app.u; y: page.contentY
         width: page.contentW + 4 * app.u; height: page.height - y
         clip: true
         visible: !!page.j && page.j.page === "home"
@@ -181,12 +127,12 @@ Item {
     // ---------- Bibliothek und Suche: Raster ----------
     Item {
         id: grid
-        x: page.contentX - 1 * app.u; y: 8 * app.u
+        x: page.contentX - 1 * app.u; y: page.contentY
         width: page.contentW + 2 * app.u; height: page.height - y
         clip: true
         visible: !!page.j && (page.j.page === "library" || page.j.page === "search")
         readonly property var list: page.j ? page.j.grid : []
-        readonly property int cols: 6
+        readonly property int cols: 8
         readonly property real gap: 1.6 * app.u
         readonly property real cellW: (page.contentW - (cols - 1) * gap) / cols
         readonly property real cellH: cellW * 1.5 + 5.6 * app.u
@@ -217,8 +163,8 @@ Item {
     // ---------- Detailseite ----------
     Item {
         id: detail
-        x: page.contentX; y: 0
-        width: page.contentW; height: page.height
+        x: page.contentX; y: page.barH - 1.5 * app.u
+        width: page.contentW; height: page.height - y
         visible: !!page.j && page.j.page === "detail" && !!page.j.detail
         readonly property var d: page.j && page.j.detail ? page.j.detail : null
         readonly property bool series: !!d && d.type === "Series"
@@ -336,7 +282,7 @@ Item {
 
     // ---------- Einstellungen ----------
     Column {
-        x: page.contentX; y: 8.5 * app.u
+        x: page.contentX; y: page.contentY
         width: Math.min(page.contentW, 50 * app.u)
         visible: !!page.j && page.j.page === "settings"
         Repeater {
@@ -347,6 +293,70 @@ Item {
                 first: index === 0
                 focused: page.j.focus === "content" && index === page.j.item && page.free
             }
+        }
+    }
+
+    // ---------- Leiste oben (über dem Inhalt, damit Reihen darunter wegscrollen) ----------
+    Rectangle {
+        width: parent.width; height: page.barH
+        gradient: Gradient {
+            GradientStop { position: 0; color: app.bg }
+            GradientStop { position: 0.75; color: app.alpha(app.bg, 0.92) }
+            GradientStop { position: 1; color: app.alpha(app.bg, 0) }
+        }
+        Row {
+            x: page.contentX; height: 4.6 * app.u; y: 0.9 * app.u
+            spacing: 0.7 * app.u
+            Rectangle {
+                width: 2.4 * app.u; height: width; radius: 0.6 * app.u
+                anchors.verticalCenter: parent.verticalCenter
+                gradient: Gradient {
+                    GradientStop { position: 0; color: page.accent }
+                    GradientStop { position: 1; color: "#00a4dc" }
+                }
+                Icon { anchors.centerIn: parent; width: 1.5 * app.u; name: "library"; color: "white" }
+            }
+            Label {
+                anchors.verticalCenter: parent.verticalCenter
+                text: "Jellyfin"; size: 1.7 * app.u; weight: Font.DemiBold; color: "white"
+            }
+            Item { width: 2.4 * app.u; height: 1 }
+            Repeater {
+                model: page.j ? page.j.nav.length : 0
+                Pill {
+                    readonly property var entry: page.j.nav[index]
+                    readonly property bool selected: index === page.j.navIndex
+                    readonly property bool hot: selected && page.j.focus === "nav" && page.free
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: navLabel.implicitWidth + 5 * app.u; height: 3 * app.u
+                    focused: hot
+                    idle: selected ? Qt.rgba(1, 1, 1, 0.12) : "transparent"
+                    readonly property color fg: hot ? app.dark : selected ? "white" : app.soft
+                    Icon {
+                        x: 1.6 * app.u - width / 2 + 0.4 * app.u
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: 1.3 * app.u
+                        name: entry.icon
+                        color: parent.fg
+                        hole: parent.hot ? app.text : app.bg
+                    }
+                    Label {
+                        id: navLabel
+                        x: 3.1 * app.u; height: parent.height
+                        text: entry.label
+                        size: 1.05 * app.u
+                        weight: selected ? Font.DemiBold : Font.Normal
+                        color: parent.fg
+                    }
+                }
+            }
+        }
+        Label {
+            anchors.right: parent.right; anchors.rightMargin: page.contentX
+            y: 0.9 * app.u; height: 4.6 * app.u
+            text: "Zurück: Leiste · Home: RaspiTV"
+            size: 0.8 * app.u
+            color: app.muted
         }
     }
 
