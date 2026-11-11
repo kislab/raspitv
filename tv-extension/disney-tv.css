@@ -1,5 +1,16 @@
 /* Disney+ im Stil der Disney+-TV-App – ergänzt netflix-tv.css (gemeinsame Bausteine). */
 
+/* Die Disney-Seite unter der eigenen Oberfläche gar nicht erst zeichnen (spart spürbar CPU);
+   Layout und Nachladen laufen weiter, sie wird nur ausgelesen. */
+html.tv-disney.nftv-on body { visibility: hidden !important; }
+/* Startseite fertig geladen: Disney-Seite gar nicht mehr berechnen (Reihen bleiben im DOM) */
+html.tv-disney.dp-asleep body { content-visibility: hidden; }
+/* … und Disneys Karussell-Animationen anhalten, die sonst ununterbrochen Bilder erzeugen */
+html.tv-disney.dp-asleep body * { animation-play-state: paused !important; transition: none !important; }
+/* Reihen außerhalb des Bildschirms nicht zeichnen; die Reihen-Ebene von Anfang an auf der GPU */
+html.tv-disney #nftv .nf-row.dp-far { visibility: hidden; }
+html.tv-disney #nftv .nf-rows { will-change: transform; }
+
 html.tv-disney #nftv {
   --red: #1f80e0; /* Fortschrittsbalken in Disney-Blau */
   background: radial-gradient(ellipse at 70% 0%, #1b2a4a 0%, #0f1424 45%, #090b13 100%);

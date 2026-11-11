@@ -25,7 +25,7 @@ done
 say() { printf '\033[1;36m==>\033[0m %s\n' "$*"; }
 
 # 1. Pakete (nur fehlende installieren)
-PACKAGES="git python3 python3-pyqt5 python3-pyqt5.qtquick qml-module-qtquick2 qml-module-qtquick-window2 qml-module-qtgraphicaleffects chromium libwidevinecdm0 lxterminal"
+PACKAGES="git python3 python3-pyqt5 python3-pyqt5.qtquick qml-module-qtquick2 qml-module-qtquick-window2 qml-module-qtgraphicaleffects mpv chromium libwidevinecdm0 lxterminal"
 MISSING=""
 for p in $PACKAGES; do
   dpkg -s "$p" >/dev/null 2>&1 || MISSING="$MISSING $p"

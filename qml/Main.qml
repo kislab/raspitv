@@ -42,8 +42,9 @@ Item {
     Home {
         id: home
         anchors.fill: parent
-        visible: s.view !== "profiles" && settings.opacity < 1
+        visible: s.view !== "profiles" && s.view !== "jellyfin" && settings.opacity < 1
     }
+    Jellyfin { anchors.fill: parent; visible: s.view === "jellyfin" && !!s.jf }
     Settings { id: settings; anchors.fill: parent }
     Profiles { id: profiles; anchors.fill: parent; visible: s.view === "profiles" }
 

@@ -84,6 +84,17 @@ Canvas {
             g.beginPath(); g.arc(x, y - 0.4 * r, 0.2 * r, 0, 2 * Math.PI); g.stroke()
             g.beginPath(); g.arc(x, y + 0.2 * r, 0.07 * s, 0, 2 * Math.PI); g.fill()
             g.beginPath(); g.arc(x, y + 0.55 * r, 0.07 * s, 0, 2 * Math.PI); g.fill()
+        } else if (name === "home") {
+            g.beginPath(); g.moveTo(x - 0.85 * r, y - 0.05 * r); g.lineTo(x, y - 0.85 * r); g.lineTo(x + 0.85 * r, y - 0.05 * r); g.stroke()
+            g.beginPath(); g.moveTo(x - 0.6 * r, y - 0.25 * r); g.lineTo(x - 0.6 * r, y + 0.8 * r); g.lineTo(x + 0.6 * r, y + 0.8 * r)
+            g.lineTo(x + 0.6 * r, y - 0.25 * r); g.stroke()
+        } else if (name === "library") {
+            rrect(x - 0.9 * r, y - 0.75 * r, 1.8 * r, 1.25 * r, 0.15 * r); g.stroke()
+            g.beginPath(); g.moveTo(x - 0.15 * r, y - 0.35 * r); g.lineTo(x + 0.3 * r, y - 0.12 * r); g.lineTo(x - 0.15 * r, y + 0.1 * r); g.closePath(); g.fill()
+            line(x - 0.6 * r, y + 0.85 * r, x + 0.6 * r, y + 0.85 * r)
+        } else if (name === "search") {
+            g.beginPath(); g.arc(x - 0.15 * r, y - 0.15 * r, 0.58 * r, 0, 2 * Math.PI); g.stroke()
+            line(x + 0.27 * r, y + 0.27 * r, x + 0.85 * r, y + 0.85 * r)
         } else if (name === "plus") {
             line(x - 0.5 * r, y, x + 0.5 * r, y)
             line(x, y - 0.5 * r, x, y + 0.5 * r)

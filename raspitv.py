@@ -37,6 +37,7 @@ import network
 import remote
 import remote_input
 import settings as cfg
+from jellyfin_ui import JellyfinUI
 from profiles_ui import AccountsUI
 
 ROOT = Path(__file__).resolve().parent
@@ -77,7 +78,7 @@ def logo_url(app, variant):
     return QUrl.fromLocalFile(str(target)).toString()
 
 
-class Home(AccountsUI, QObject):
+class Home(AccountsUI, JellyfinUI, QObject):
     """Zustand und Logik der Oberfläche. QML liest `state` und zeichnet danach."""
     key = pyqtSignal(str)       # auch aus dem Fernbedienungs-Thread auslösbar
     stateChanged = pyqtSignal()
@@ -94,6 +95,7 @@ class Home(AccountsUI, QObject):
             bg=a["bg"], heroBg=a.get("hero_bg", a["bg"]), fg=a["fg"], accent=a["accent"],
             logo=logo_url(a, "tile"), heroLogo=logo_url(a, "hero")) for a in apps}
         self.init_accounts()           # Konto (eigene Logins und Einstellungen) und dessen Einstellungen
+        self.init_jellyfin()           # Jellyfin als eigene App (jellyfin_ui.py)
         self.row = APPS
         self.col = 0                   # gewählte App
         self.store_col = 0             # gewählte App in „Verfügbare Apps“
@@ -143,7 +145,8 @@ class Home(AccountsUI, QObject):
         menu = self.menu and {"title": self.menu.get("title", ""), "items": [label for label, _ in self.menu["items"]],
                               "index": self.menu["index"], "anchor": self.menu.get("anchor", "tile"),
                               "at": self.menu.get("at", self.col)}
-        dialog = self.dialog and {"text": self.dialog["text"], "buttons": [label for label, _ in self.dialog["buttons"]],
+        dialog = self.dialog and {"text": self.dialog["text"], "sub": self.dialog.get("sub", ""),
+                                  "buttons": [label for label, _ in self.dialog["buttons"]],
                                   "index": self.dialog["index"],
                                   "app": self.info[self.dialog["app"]["id"]] if self.dialog.get("app") else None}
         state = {
@@ -157,7 +160,7 @@ class Home(AccountsUI, QObject):
             "store": [self.info[a["id"]] for a in self.store],
             "allApps": [self.info[a["id"]] for a in self.all_apps],
             "hero": self.focused_app()["id"],
-            "menu": menu, "dialog": dialog,
+            "menu": menu, "dialog": dialog, "jf": self.jf_state(),
             "covered": bool(self.running and time.monotonic() - self.started > COVERED_AFTER),
             "settings": {"cats": [{k: c[k] for k in ("label", "icon", "desc")} for c in self.cats],
                          "cat": self.cat, "pane": self.pane, "item": self.item, "sub": self.sub_info(),
@@ -260,6 +263,8 @@ class Home(AccountsUI, QObject):
             self.move_key(key)
         elif self.view == "profiles":
             self.profiles_key(key)
+        elif self.view == "jellyfin":
+            self.jellyfin_key(key)
         elif key == "menu":
             if self.view == "home" and self.row == APPS:
                 self.open_menu()
@@ -291,7 +296,10 @@ class Home(AccountsUI, QObject):
     def dialog_key(self, key):
         buttons = self.dialog["buttons"]
         if key in ("back", "home"):
+            cancel = self.dialog.get("cancel")
             self.dialog = None
+            if cancel:
+                cancel()
         elif key in ("left", "right") and buttons:
             step = -1 if key == "left" else 1
             self.dialog["index"] = min(max(self.dialog["index"] + step, 0), len(buttons) - 1)
@@ -388,6 +396,8 @@ class Home(AccountsUI, QObject):
     # ---------- Dienste starten ----------
 
     def launch(self, app):
+        if app["id"] == "jellyfin":  # eigene App in RaspiTV statt Webseite im Player
+            return self.open_jellyfin()
         if app.get("server"):  # Adresse kommt aus den Einstellungen (z. B. eigener Jellyfin-Server)
             url = self.server_url(app["server"])
             if not url:
@@ -497,7 +507,10 @@ class Home(AccountsUI, QObject):
         elif key == "mute":
             subprocess.run(["wpctl", "set-mute", cfg.SINK, "toggle"], timeout=2, check=False)
         elif key == "playpause":
-            remote.press("playpause")
+            if self.mpv.running():
+                self.mpv.key("playpause")
+            else:
+                remote.press("playpause")
 
     # ---------- Einstellungen ----------
 
@@ -905,6 +918,7 @@ def main():
 
     app.aboutToQuit.connect(player.stop)
     app.aboutToQuit.connect(agent.stop)
+    app.aboutToQuit.connect(home.mpv.stop)
     # Auch beim Beenden von außen (kill, Abmelden) den Player mit schließen
     signal.signal(signal.SIGTERM, lambda *_: app.quit())
     signal.signal(signal.SIGINT, lambda *_: app.quit())

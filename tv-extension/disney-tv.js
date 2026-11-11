@@ -100,6 +100,7 @@
   // ---------- Daten aus der Disney-Seite ----------
 
   const rowCache = new Map(); // Reihen-Überschrift -> { title, cards }, in Lade-Reihenfolge
+  const slideCache = new Map(); // Banner-Nummer -> Banner
   let cachePath = "";
 
   /** Bezeichnung ohne Disney-Zusätze wie "Für Details zu diesem Titel auswählen." */
@@ -131,8 +132,8 @@
       label: (art && art.alt) || (pic && pic.alt) || parsed.label || text(a),
       sub: parsed.sub,
       meta: parsed.meta,
-      img: sized(src(pic), 640),
-      art: art ? sized(src(art), 480) : "", // Titel-Schriftzug, den Disney über Poster legt
+      img: sized(src(pic), 400),
+      art: art ? sized(src(art), 320) : "", // Titel-Schriftzug, den Disney über Poster legt
       tall: r.height > r.width * 1.1, // hochkant (Poster) statt 16:9
       progress: progressOf(a.closest(tid("set-shelf-item")) || a),
     };
@@ -141,11 +142,13 @@
   function readHome() {
     const heroSet = $(tid("hero-carousel-shelf"));
     // Das Karussell dreht sich selbst weiter und sortiert dabei um: nach fester Nummer ordnen
-    const slideNo = (el) => +((el.id || "").match(/slide-(\d+)/) || [0, 0])[1];
-    const slides = $$(tid("hero-carousel-shelf-item")).sort((a, b) => slideNo(a) - slideNo(b)).map((s) => {
+    // Beim Weiterdrehen legt Disney kurz Kopien ohne Nummer an – die zählen nicht. Gesehene Banner
+    // werden gemerkt (wie die Reihen), sonst sähe jedes Drehen wie eine neue Seite aus.
+    const slideNo = (el) => { const m = (el.id || "").match(/slide-(\d+)$/); return m ? +m[1] : -1; };
+    $$(tid("hero-carousel-shelf-item")).filter((s) => slideNo(s) >= 0).forEach((s) => {
       const a = $("a", s);
       const rating = $(`${tid("undefined-ratings-and-features")} img`, s);
-      return {
+      const slide = {
         href: a ? a.getAttribute("href") : "",
         bg: sized(src($(tid("hero-carousel-item-background"), s)), 1920),
         logo: sized(src($(tid("hero-carousel-title-treatment"), s)), 900),
@@ -154,7 +157,9 @@
         rating: rating ? rating.alt : "",
         meta: text($(tid("undefined-metadata-text"), s)),
       };
-    }).filter((s) => s.bg);
+      if (slide.bg && slide.href) slideCache.set(slideNo(s), slide);
+    });
+    const slides = [...slideCache.keys()].sort((a, b) => a - b).map((n) => slideCache.get(n));
 
     // Disney lädt Reihen beim Scrollen nach (und kann sie wieder entfernen): gesehene Reihen merken
     $$(tid("set"))
@@ -201,7 +206,7 @@
             title: title || cleanLabel(a.getAttribute("aria-label")) || (pic && pic.alt) || "",
             desc: text($(tid("standard-regular-list-item-description"), a)),
             meta: (text($(tid("standard-regular-list-metadata"), a)).match(/\(([^)]+)\)/) || [])[1] || "",
-            img: sized(src(pic), 640),
+            img: sized(src(pic), 400),
             progress: progressOf(a),
             episode: /\/play\//.test(a.getAttribute("href") || ""),
           };
@@ -412,12 +417,23 @@
     const first = inRows || !hasHero ? S.row : 0;
     const offset = dom.rows[first] ? dom.rows[first].el.offsetTop : 0;
     dom.rowsEl.style.transform = `translateY(calc(var(--u) * ${top} - ${offset}px))`;
-    dom.rows.forEach((row, r) => {
-      row.el.classList.toggle("nf-row-gone", (inRows || !hasHero) && r < S.row);
+    // Nur Reihen in Sichtweite zeichnen und anfassen – sonst schiebt der Pi bei jedem Schritt
+    // Hunderte Karten mit Schatten mit und ruckelt. Erst alle Positionen lesen, dann schreiben
+    // (abwechselndes Lesen/Schreiben erzwingt sonst pro Reihe ein neues Layout).
+    const near = (r) => r >= S.row - 1 && r <= S.row + 3;
+    const shifts = dom.rows.map((row, r) => {
+      if (!near(r)) return null;
       const col = clamp(S.cols[r] || 0, 0, row.cards.length - 1);
       S.cols[r] = col;
       // Karten sind unterschiedlich breit (Poster/Kacheln): an der echten Position ausrichten
-      row.track.style.transform = `translateX(${-(row.cards[col] ? row.cards[col].offsetLeft : 0)}px)`;
+      return row.cards[col] ? row.cards[col].offsetLeft : 0;
+    });
+    dom.rows.forEach((row, r) => {
+      row.el.classList.toggle("nf-row-gone", (inRows || !hasHero) && r < S.row);
+      row.el.classList.toggle("dp-far", shifts[r] === null);
+      if (shifts[r] === null) return;
+      const col = S.cols[r];
+      row.track.style.transform = `translateX(${-shifts[r]}px)`;
       row.cards.forEach((c, i) => {
         c.classList.toggle("nf-on", S.zone === "rows" && r === S.row && i === col);
         c.classList.toggle("nf-past", i < col);
@@ -953,10 +969,21 @@
       }
     }
 
+    // Startseite fertig geladen: die versteckte Disney-Seite schlafen legen (nicht mehr berechnen,
+    // nicht mehr auslesen). Sonst rechnet sie bei jedem Bild ihre ~700 Sichtbarkeits-Beobachter
+    // durch und die Navigation ruckelt. Nach dem Zurückkommen von anderen Seiten (Detail, Player)
+    // bleibt sie 5 s wach, damit z. B. "Weiterschauen" aktuell eingelesen wird.
+    if (view !== "home") S.wakeAt = Date.now();
+    S.asleep = view === "home" && S.view === "home" && S.preloadDone && cachePath === location.pathname &&
+      Date.now() - (S.wakeAt || 0) > 5000;
+    document.documentElement.classList.toggle("dp-asleep", S.asleep);
+    if (S.asleep) return;
+
     if (view === "home") {
       if (cachePath !== location.pathname) {
         // neue Seite: gemerkte Reihen verwerfen und von oben nachladen
         rowCache.clear();
+        slideCache.clear();
         cachePath = location.pathname;
         S.preloadDone = false;
         S.preloadIdle = 0;

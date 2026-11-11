@@ -11,8 +11,8 @@ TEXT_KEYS = [list("ABCDEFGHIJ"), list("KLMNOPQRST"), list("UVWXYZÄÖÜß"), lis
 PIN_KEYS = [["1", "2", "3"], ["4", "5", "6"], ["7", "8", "9"], ["⌫", "0", "Fertig"]]
 # Passwörter (WLAN): Groß/klein per ⇧, dazu Sonderzeichen; Buchstaben werden nicht automatisch groß
 PASS_KEYS = [list("1234567890ß"), list("qwertzuiopü"), list("asdfghjklöä"), ["⇧"] + list("yxcvbnm-_."),
-             list("!@#$%&*?+=/"), ["Leerzeichen", "⌫", "Fertig"]]
-MAX_LEN = {"pin": PIN_LEN, "text": 20, "password": 63}
+             list("!@#$%&*?+=/:"), ["Leerzeichen", "⌫", "Fertig"]]
+MAX_LEN = {"pin": PIN_LEN, "text": 20, "password": 63, "url": 100}
 
 
 class AccountsUI:
@@ -168,7 +168,7 @@ class AccountsUI:
 
     def osk_rows(self):
         mode = self.osk["mode"]
-        if mode == "password":
+        if mode in ("password", "url"):
             return [[k.upper() if self.osk["shift"] and len(k) == 1 and k.isalpha() and k != "ß" else k for k in row]
                     for row in PASS_KEYS]
         return PIN_KEYS if mode == "pin" else TEXT_KEYS
@@ -203,8 +203,8 @@ class AccountsUI:
                 o["value"] += label
             if len(o["value"]) == PIN_LEN:
                 o["done"](o["value"])
-        elif o["mode"] == "password":
-            if len(o["value"]) < MAX_LEN["password"]:
+        elif o["mode"] in ("password", "url"):
+            if len(o["value"]) < MAX_LEN[o["mode"]]:
                 o["value"] += label
         elif len(o["value"]) < MAX_LEN["text"]:
             first = not o["value"] or o["value"].endswith(" ")

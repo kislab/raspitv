@@ -85,8 +85,9 @@ Item {
         Rectangle {
             id: cardBox
             readonly property bool hasButtons: parent.buttons.length > 0
-            width: Math.max(buttonRow.width, title.implicitWidth, 18 * app.u) + 6 * app.u
-            height: (hasButtons ? 11.5 : 7) * app.u
+            width: Math.max(buttonRow.width, title.implicitWidth, sub.implicitWidth, 18 * app.u) + 6 * app.u
+            readonly property bool hasSub: !!dlg.d && dlg.d.sub !== ""
+            height: (hasButtons ? 11.5 : 7) * app.u + (hasSub ? 2.4 * app.u : 0)
             anchors.centerIn: parent
             radius: 1.6 * app.u
             color: app.card
@@ -100,6 +101,17 @@ Item {
                 size: 1.7 * app.u
                 weight: Font.DemiBold
                 color: "white"
+            }
+            Label {
+                id: sub
+                visible: cardBox.hasSub
+                width: parent.width
+                y: title.y + 3.2 * app.u; height: 1.8 * app.u
+                horizontalAlignment: Text.AlignHCenter
+                elide: Text.ElideNone
+                text: dlg.d ? dlg.d.sub : ""
+                size: 1.0 * app.u
+                color: app.soft
             }
             Row {
                 id: buttonRow

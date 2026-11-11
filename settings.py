@@ -20,11 +20,16 @@ DEFAULTS = {
     "known": [],   # IDs aller Apps, die dieses Konto schon kennt (neue Store-Apps starten deinstalliert)
     "order": [],   # eigene Reihenfolge der Kacheln (App-IDs); fehlende Apps kommen hinten dran
     "jellyfin_url": "",  # Adresse des Jellyfin-Servers (wird im Netz gesucht)
+    "jellyfin_token": "",    # Anmeldung bei Jellyfin (je Konto)
+    "jellyfin_user_id": "",
+    "jellyfin_user": "",
+    "jellyfin_device": "",   # Geräte-ID von RaspiTV gegenüber Jellyfin
 }
 
 
 # Diese Einstellungen gehören dem jeweiligen Konto, alle anderen gelten für das ganze Gerät
-ACCOUNT_KEYS = ("tile_size", "clock_24h", "animations", "hidden", "known", "order")
+ACCOUNT_KEYS = ("tile_size", "clock_24h", "animations", "hidden", "known", "order",
+                "jellyfin_token", "jellyfin_user_id", "jellyfin_user", "jellyfin_device")
 
 
 def _read(path):
