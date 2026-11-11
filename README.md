@@ -29,7 +29,7 @@ Mediacenter für den Raspberry Pi 4 im Stil von Google TV – bedienbar mit der 
   rechts: hell = verbunden, durchgestrichen = schläft/getrennt. Nötig: Bluetooth-„Privacy“ (macht der Installer).
 - **Kacheln anordnen**: OK lange gedrückt halten → Menü mit Öffnen, Verschieben, Deinstallieren.
 - **Lautstärke**: Lautstärke-Tasten der Fernbedienung stellen den Standard-Audioausgang (PipeWire); unter 20 % in
-  2er-, sonst in 5er-Schritten, „lauter“ hebt Stumm auf. Anzeige als Kapsel rechts – gleich in RaspiTV
+  2er-, sonst in 5er-Schritten, „lauter“ hebt Stumm auf. Anzeige als senkrechte Leiste links – gleich in RaspiTV
   (`qml/VolumeOsd.qml`), im Jellyfin-Player (`jellyfin_osd.volume`) und in Netflix/Disney+/Prime (`tv-extension/tv.js`).
 - **Fernbedienung**: HTTP-Schnittstelle auf `127.0.0.1:8765` (`POST /key {"key": "up"}`, `"menu"` = langes OK,
   `"volumeup"`/`"volumedown"`/`"mute"`, `GET /status`).

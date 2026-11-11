@@ -153,21 +153,22 @@ def speaker(cx, cy, s, rgb, opacity, muted):
 
 
 def volume(value, muted):
-    """Lautstärke-Kapsel am rechten Rand – wie in RaspiTV (qml/VolumeOsd.qml) und in Netflix & Co."""
+    """Senkrechte Lautstärke-Leiste links – wie in RaspiTV (qml/VolumeOsd.qml) und in Netflix & Co."""
     u = 24  # RaspiTV-Einheit bei 1920 px Breite
-    w, h = 3.2 * u, 17 * u
-    x, y = W - 2.4 * u - w, (H - h) / 2
-    fg, op = ((150, 150, 160), 1.0) if muted else ((255, 255, 255), 1.0)
-    out = [shape(rounded(x, y, w, h, w / 2), (20, 20, 28), 0.88)]
-    out.append(text(x + w / 2, y + 1.0 * u, "–" if muted else str(round(value)), 26, fg, align=8, bold=True,
-                    shadow=False))
-    tw = 0.55 * u
-    tx, ty, th = x + (w - tw) / 2, y + 3.3 * u, h - 7.4 * u
+    w, h = 4 * u, 22 * u
+    x, y = 4 * u, (H - h) / 2
+    fg = (150, 150, 160) if muted else (255, 255, 255)
+    out = [shape(rounded(x, y + 0.3 * u, w, h, w / 2), (0, 0, 0), 0.3),   # leichter Schatten
+           shape(rounded(x, y, w, h, w / 2), (20, 20, 28), 1.0)]
+    cx = x + w / 2
+    out.append(text(cx, y + 2.2 * u, "–" if muted else str(round(value)), 40, fg, align=5, bold=True, shadow=False))
+    tw = 0.5 * u
+    tx, ty, th = cx - tw / 2, y + 4.4 * u, h - 8.8 * u
     out.append(shape(rounded(tx, ty, tw, th, tw / 2), (255, 255, 255), 0.18))
     fill = max(tw if value > 0 else 0, th * value / 100)
     if fill:
         out.append(shape(rounded(tx, ty + th - fill, tw, fill, tw / 2), (255, 255, 255), 0.35 if muted else 1))
-    out += speaker(x + w / 2, y + h - 2.55 * u, 1.5 * u, fg, op, muted or value == 0)
+    out += speaker(cx, y + h - 2.2 * u, 1.8 * u, fg, 1.0, muted or value == 0)
     return out
 
 

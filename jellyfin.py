@@ -485,7 +485,7 @@ class MpvPlayer:
                 self.overlay_sock.settimeout(1)
 
     def show_volume(self, value, muted):
-        """Lautstärke-Kapsel für 2,5 s einblenden (aus dem Fernbedienungs-Thread)."""
+        """Lautstärke-Leiste links für 2,5 s einblenden (aus dem Fernbedienungs-Thread)."""
         import jellyfin_osd as osd
         with self.ui_lock:
             self.vol_until = time.monotonic() + 2.5
