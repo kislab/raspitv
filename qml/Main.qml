@@ -56,6 +56,7 @@ Item {
     }
     Dialog { anchors.fill: parent; visible: !!s.dialog }
     Osk { anchors.fill: parent; visible: !!s.osk }
+    VolumeOsd { anchors.fill: parent }
 
     // Einblenden beim Start
     Rectangle {

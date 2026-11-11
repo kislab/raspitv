@@ -54,6 +54,14 @@ Canvas {
             g.closePath(); g.stroke()
             g.beginPath(); g.arc(x + 0.2 * r, y, 0.45 * r, -0.87, 0.87); g.stroke()
             g.beginPath(); g.arc(x + 0.25 * r, y, 0.8 * r, -0.87, 0.87); g.stroke()
+        } else if (name === "mute") {
+            // Lautsprecher mit Kreuz
+            g.beginPath()
+            g.moveTo(x - 0.9 * r, y - 0.3 * r); g.lineTo(x - 0.5 * r, y - 0.3 * r); g.lineTo(x - 0.05 * r, y - 0.75 * r)
+            g.lineTo(x - 0.05 * r, y + 0.75 * r); g.lineTo(x - 0.5 * r, y + 0.3 * r); g.lineTo(x - 0.9 * r, y + 0.3 * r)
+            g.closePath(); g.stroke()
+            line(x + 0.3 * r, y - 0.35 * r, x + 0.95 * r, y + 0.35 * r)
+            line(x + 0.95 * r, y - 0.35 * r, x + 0.3 * r, y + 0.35 * r)
         } else if (name === "power") {
             g.beginPath(); g.arc(x, y + 0.1 * r, 0.8 * r, -Math.PI / 2 + 0.55, -Math.PI / 2 - 0.55 + 2 * Math.PI); g.stroke()
             line(x, y - 0.95 * r, x, y - 0.1 * r)

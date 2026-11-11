@@ -308,6 +308,9 @@ class MpvPlayer:
         self.seek_at = 0.0
         self.overlay_on = False
         self.dirty = True
+        self.vol_state = None    # (Prozent, stumm?) der Lautstärke-Anzeige
+        self.vol_until = 0.0
+        self.vol_on = False
 
     def running(self):
         return self.proc is not None and self.proc.poll() is None
@@ -456,6 +459,10 @@ class MpvPlayer:
                 elif self.overlay_on:
                     self.overlay_command({"name": "osd-overlay", "id": 1, "format": "none", "data": ""})
                     self.overlay_on = False
+                # Lautstärke-Anzeige (eigene Ebene über der Leiste)
+                if self.vol_on and time.monotonic() > self.vol_until:
+                    self.overlay_command({"name": "osd-overlay", "id": 2, "format": "none", "data": ""})
+                    self.vol_on = False
             self.drain_overlay_sock()
             time.sleep(0.1)
         self.close_overlay_sock()
@@ -476,6 +483,16 @@ class MpvPlayer:
         finally:
             if self.overlay_sock:
                 self.overlay_sock.settimeout(1)
+
+    def show_volume(self, value, muted):
+        """Lautstärke-Kapsel für 2,5 s einblenden (aus dem Fernbedienungs-Thread)."""
+        import jellyfin_osd as osd
+        with self.ui_lock:
+            self.vol_until = time.monotonic() + 2.5
+            self.overlay_command({"name": "osd-overlay", "id": 2, "format": "ass-events",
+                                  "data": "\n".join(osd.volume(value, muted)),
+                                  "res_x": osd.W, "res_y": osd.H, "z": 20})
+            self.vol_on = True
 
     def open_menu(self):
         import jellyfin_osd as osd

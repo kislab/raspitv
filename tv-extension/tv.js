@@ -310,8 +310,32 @@
   window.addEventListener("keydown", onKey, true);
   window.addEventListener("keyup", onKey, true);
 
+  // Lautstärke-Anzeige: RaspiTV stellt den Ton und schickt "volume:<prozent>:<stumm 0/1>".
+  // Gleiches Aussehen wie in RaspiTV (qml/VolumeOsd.qml) und im Jellyfin-Player.
+  const vol = document.createElement("div");
+  vol.id = "tv-volume";
+  vol.innerHTML = '<div class="tv-vol-num"></div><div class="tv-vol-track"><div class="tv-vol-fill"></div></div>' +
+    '<svg class="tv-vol-icon" viewBox="0 0 24 24"><path class="tv-vol-body" d="M3 9.6h3.6L11.5 5v14l-4.9-4.6H3z"/>' +
+    '<path class="tv-vol-waves" d="M14.4 9.2a4 4 0 0 1 0 5.6M17 6.6a7.6 7.6 0 0 1 0 10.8"/>' +
+    '<path class="tv-vol-x" d="M15 9.5l5 5M20 9.5l-5 5"/></svg>';
+  let volTimer = null;
+  function showVolume(value, muted) {
+    // Im Vollbild (Player) zeigt Chromium nur das Vollbild-Element – die Anzeige muss hinein
+    const host = document.fullscreenElement || document.documentElement;
+    if (vol.parentNode !== host) host.append(vol);
+    vol.querySelector(".tv-vol-num").textContent = muted ? "–" : String(value);
+    vol.querySelector(".tv-vol-fill").style.height = `${value > 0 ? Math.max(value, 3) : 0}%`;
+    vol.classList.toggle("tv-vol-muted", muted || value === 0);
+    vol.classList.add("tv-vol-on");
+    clearTimeout(volTimer);
+    volTimer = setTimeout(() => vol.classList.remove("tv-vol-on"), 2500);
+  }
+
   chrome.runtime.onMessage.addListener((message) => {
-    if (message.key === "playpause") {  // Play/Pause der Fernbedienung: laufendes Video umschalten
+    const v = /^volume:(\d+):([01])$/.exec(message.key || "");
+    if (v) {
+      showVolume(+v[1], v[2] === "1");
+    } else if (message.key === "playpause") {  // Play/Pause der Fernbedienung: laufendes Video umschalten
       const video = [...document.querySelectorAll("video")].find((v) => v.readyState > 0);
       if (video) video.paused ? video.play() : video.pause();
     } else if (message.key) handle(message.key, false);

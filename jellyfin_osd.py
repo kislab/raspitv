@@ -129,6 +129,48 @@ def controls(info, pos, duration, paused, cached=0.0, seek_hint=""):
     return out
 
 
+def speaker(cx, cy, s, rgb, opacity, muted):
+    """Lautsprecher-Symbol (gefüllt) mit Wellen bzw. Kreuz, Größe s um (cx, cy)."""
+    r = s / 2
+    body = (f"m {cx - 0.9 * r:.1f} {cy - 0.3 * r:.1f} l {cx - 0.5 * r:.1f} {cy - 0.3 * r:.1f} "
+            f"{cx - 0.05 * r:.1f} {cy - 0.75 * r:.1f} {cx - 0.05 * r:.1f} {cy + 0.75 * r:.1f} "
+            f"{cx - 0.5 * r:.1f} {cy + 0.3 * r:.1f} {cx - 0.9 * r:.1f} {cy + 0.3 * r:.1f}")
+    out = [shape(body, rgb, opacity)]
+    w = 0.13 * s
+    if muted:
+        for a, b in ((-1, 1), (1, -1)):
+            x1, y1, x2, y2 = cx + 0.3 * r, cy + a * 0.35 * r, cx + 0.95 * r, cy + b * 0.35 * r
+            # Strich als schmales Viereck
+            dx, dy = (y2 - y1), -(x2 - x1)
+            n = (dx * dx + dy * dy) ** 0.5 or 1
+            ox, oy = dx / n * w / 2, dy / n * w / 2
+            out.append(shape(f"m {x1 + ox:.1f} {y1 + oy:.1f} l {x2 + ox:.1f} {y2 + oy:.1f} "
+                             f"{x2 - ox:.1f} {y2 - oy:.1f} {x1 - ox:.1f} {y1 - oy:.1f}", rgb, opacity))
+    else:
+        out.append(shape(rect(cx + 0.2 * r, cy - 0.32 * r, w, 0.64 * r), rgb, opacity))
+        out.append(shape(rect(cx + 0.55 * r, cy - 0.55 * r, w, 1.1 * r), rgb, opacity))
+    return out
+
+
+def volume(value, muted):
+    """Lautstärke-Kapsel am rechten Rand – wie in RaspiTV (qml/VolumeOsd.qml) und in Netflix & Co."""
+    u = 24  # RaspiTV-Einheit bei 1920 px Breite
+    w, h = 3.2 * u, 17 * u
+    x, y = W - 2.4 * u - w, (H - h) / 2
+    fg, op = ((150, 150, 160), 1.0) if muted else ((255, 255, 255), 1.0)
+    out = [shape(rounded(x, y, w, h, w / 2), (20, 20, 28), 0.88)]
+    out.append(text(x + w / 2, y + 1.0 * u, "–" if muted else str(round(value)), 26, fg, align=8, bold=True,
+                    shadow=False))
+    tw = 0.55 * u
+    tx, ty, th = x + (w - tw) / 2, y + 3.3 * u, h - 7.4 * u
+    out.append(shape(rounded(tx, ty, tw, th, tw / 2), (255, 255, 255), 0.18))
+    fill = max(tw if value > 0 else 0, th * value / 100)
+    if fill:
+        out.append(shape(rounded(tx, ty + th - fill, tw, fill, tw / 2), (255, 255, 255), 0.35 if muted else 1))
+    out += speaker(x + w / 2, y + h - 2.55 * u, 1.5 * u, fg, op, muted or value == 0)
+    return out
+
+
 def track_label(track):
     lang = (track.get("lang") or "").lower()
     names = {"de": "Deutsch", "ger": "Deutsch", "deu": "Deutsch", "en": "Englisch", "eng": "Englisch",

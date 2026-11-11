@@ -114,7 +114,8 @@ class Home(AccountsUI, JellyfinUI, QObject):
         self.pairing_until = 0.0       # bis wann der Bluetooth-Agent Kopplungen annimmt
         self.ticks = 0
         self.volume = None
-        self.dialog = None             # {"text", "buttons": [(label, fn)], "index", "app"?}
+        self.vol = {"value": 0, "muted": False, "seq": 0}  # Lautstärke-Anzeige (seq zählt Tastendrücke)
+        self.dialog = None            # {"text", "buttons": [(label, fn)], "index", "app"?}
         self.menu = None               # Kachel-Menü: {"items": [(label, fn)], "index", "title", "anchor", "at"}
         self.moving = False            # Kachel wird gerade verschoben
         self.ok_down = None            # Zeitpunkt, seit dem OK gedrückt gehalten wird
@@ -160,7 +161,7 @@ class Home(AccountsUI, JellyfinUI, QObject):
             "store": [self.info[a["id"]] for a in self.store],
             "allApps": [self.info[a["id"]] for a in self.all_apps],
             "hero": self.focused_app()["id"],
-            "menu": menu, "dialog": dialog, "jf": self.jf_state(),
+            "menu": menu, "dialog": dialog, "jf": self.jf_state(), "vol": self.vol,
             "covered": bool(self.running and time.monotonic() - self.started > COVERED_AFTER),
             "settings": {"cats": [{k: c[k] for k in ("label", "icon", "desc")} for c in self.cats],
                          "cat": self.cat, "pane": self.pane, "item": self.item, "sub": self.sub_info(),
@@ -250,6 +251,9 @@ class Home(AccountsUI, JellyfinUI, QObject):
             self.handle("menu")
 
     def handle(self, key):
+        if key in ("volumeup", "volumedown", "mute"):  # z. B. über POST /key (CEC, Handy)
+            threading.Thread(target=self.remote_extra, args=(key,), daemon=True).start()
+            return
         if self.running:
             if key == "home":  # alle anderen Tasten gehören der Seite im Player
                 self.go_home()
@@ -502,15 +506,28 @@ class Home(AccountsUI, JellyfinUI, QObject):
 
     def remote_extra(self, key):
         """Tasten der Fernbedienung, die RaspiTV selbst erledigt (aus dem Lese-Thread)."""
-        if key in ("volumeup", "volumedown"):
-            cfg.change_volume(5 if key == "volumeup" else -5)
-        elif key == "mute":
-            subprocess.run(["wpctl", "set-mute", cfg.SINK, "toggle"], timeout=2, check=False)
+        if key in ("volumeup", "volumedown", "mute"):
+            volume, muted = cfg.volume_key(key)
+            if volume is not None:
+                self.show_volume(volume, muted)
         elif key == "playpause":
             if self.mpv.running():
                 self.mpv.key("playpause")
             else:
                 remote.press("playpause")
+
+    def show_volume(self, volume, muted):
+        """Lautstärke-Anzeige dort zeigen, wo man gerade ist (aus jedem Thread aufrufbar):
+        im Jellyfin-Player (mpv), in Netflix & Co. (TV-Erweiterung) und in RaspiTV selbst."""
+        if self.mpv.running():
+            self.mpv.show_volume(volume, muted)
+        if self.player.running():
+            remote.notify(f"volume:{volume}:{int(muted)}")
+
+        def update():
+            self.volume = volume  # Lautstärke-Zeile in den Einstellungen zieht mit
+            self.vol = {"value": volume, "muted": muted, "seq": self.vol["seq"] + 1}
+        self.bgDone.emit(update)
 
     # ---------- Einstellungen ----------
 

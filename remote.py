@@ -16,11 +16,16 @@ import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 HOST, PORT = "127.0.0.1", 8765
-KEYS = {"up", "down", "left", "right", "ok", "back", "home", "menu"}
+KEYS = {"up", "down", "left", "right", "ok", "back", "home", "menu", "volumeup", "volumedown", "mute"}
+LOCAL = {"menu", "volumeup", "volumedown", "mute"}  # erledigt RaspiTV selbst, nicht an die Seite im Player
 
 
 def press(key):
     """Wird von start() ersetzt; vorher gehen Tasten verloren."""
+
+
+def notify(message):
+    """Nachricht an die TV-Erweiterung (z. B. "volume:45:0" für die Lautstärke-Anzeige); von start() ersetzt."""
 
 
 def start(on_key, get_status):
@@ -29,7 +34,7 @@ def start(on_key, get_status):
     Danach nimmt `remote.press(key)` Tasten direkt angeschlossener Fernbedienungen an (remote_input.py):
     sie gehen an RaspiTV und – wie Tasten über POST /key – an die TV-Erweiterung im Player.
     """
-    global press
+    global press, notify
     listeners = set()
     lock = threading.Lock()
 
@@ -98,7 +103,7 @@ def start(on_key, get_status):
             if key not in KEYS:
                 return self.reply({"error": "unknown key"}, 400)
             on_key(key)
-            if origin is None and key != "menu":  # nicht an die Erweiterung zurückschicken; "menu" gilt nur RaspiTV
+            if origin is None and key not in LOCAL:  # nicht an die Erweiterung zurückschicken
                 publish(key)
             self.reply({"ok": True})
 
@@ -108,6 +113,7 @@ def start(on_key, get_status):
         if key != "menu":  # "menu" gilt nur RaspiTV
             publish(key)
     press = press_key
+    notify = publish
 
     server = ThreadingHTTPServer((HOST, PORT), Handler)
     server.daemon_threads = True

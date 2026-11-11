@@ -125,6 +125,43 @@ def change_volume(step):
         pass
 
 
+def get_audio():
+    """(Lautstärke in Prozent, stumm?) – oder (None, False) ohne Audiogerät."""
+    try:
+        out = subprocess.run(["wpctl", "get-volume", SINK], capture_output=True, text=True, timeout=2).stdout
+        return round(float(re.search(r"[\d.]+", out).group()) * 100), "MUTED" in out
+    except (OSError, subprocess.SubprocessError, AttributeError, ValueError):
+        return None, False
+
+
+def volume_key(key):
+    """Lautstärke-Taste der Fernbedienung ausführen; gibt danach (Prozent, stumm?) zurück.
+
+    Leise wird fein eingestellt (unter 20 % in 2er-, sonst in 5er-Schritten), Lauter hebt
+    Stummschaltung auf, und die Lautstärke rastet auf das Schrittraster ein (z. B. 43 -> 45).
+    """
+    volume, muted = get_audio()
+    if volume is None:
+        return None, False
+    try:
+        if key == "mute":
+            subprocess.run(["wpctl", "set-mute", SINK, "toggle"], timeout=2, check=False)
+            return volume, not muted
+        if key == "volumeup":
+            step = 2 if volume < 20 else 5
+            target = min(100, (volume // step + 1) * step)
+            if muted:
+                subprocess.run(["wpctl", "set-mute", SINK, "0"], timeout=2, check=False)
+                muted = False
+        else:
+            step = 2 if volume <= 20 else 5
+            target = max(0, (-(-volume // step) - 1) * step)  # aufrunden aufs Raster, dann ein Schritt
+        subprocess.run(["wpctl", "set-volume", SINK, f"{target / 100:.2f}"], timeout=2, check=False)
+        return target, muted
+    except (OSError, subprocess.SubprocessError):
+        return volume, muted
+
+
 # ---------- Updates (GitHub) ----------
 
 def _git(*args, timeout=30):

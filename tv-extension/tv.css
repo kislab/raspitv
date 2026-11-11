@@ -59,3 +59,57 @@ html { scrollbar-width: none; scroll-behavior: smooth; }
 }
 #tv-osk .tv-osk-key.tv-osk-on { background: #fff; color: #141414; transform: scale(1.12); }
 #tv-osk .tv-osk-key.tv-osk-active { background: #e50914; }
+
+/* Lautstärke-Anzeige (tv.js): senkrechte Kapsel rechts, wie in RaspiTV und im Jellyfin-Player.
+   Maße in der RaspiTV-Einheit (1/80 der Breite = 1.25vw). */
+#tv-volume {
+  --vu: 1.25vw;
+  position: fixed;
+  right: calc(var(--vu) * 2.4);
+  top: 50%;
+  width: calc(var(--vu) * 3.2);
+  height: calc(var(--vu) * 17);
+  margin-top: calc(var(--vu) * -8.5);
+  box-sizing: border-box;
+  border-radius: calc(var(--vu) * 1.6);
+  background: rgba(20, 20, 28, 0.88);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  z-index: 2147483647;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateX(calc(var(--vu) * 1.2));
+  transition: opacity 0.35s, transform 0.2s ease-out;
+  font: 700 calc(var(--vu) * 1.05)/1 "Nunito Sans", "Netflix Sans", Helvetica, Arial, sans-serif;
+  color: #fff;
+}
+#tv-volume.tv-vol-on { opacity: 1; transform: none; transition: opacity 0.12s, transform 0.2s ease-out; }
+#tv-volume .tv-vol-num { position: absolute; top: calc(var(--vu) * 1.05); left: 0; right: 0; text-align: center; }
+#tv-volume .tv-vol-track {
+  position: absolute;
+  left: 50%; top: calc(var(--vu) * 3.3);
+  width: calc(var(--vu) * 0.55); height: calc(100% - var(--vu) * 7.4);
+  margin-left: calc(var(--vu) * -0.275);
+  border-radius: calc(var(--vu) * 0.3);
+  background: rgba(255, 255, 255, 0.18);
+  overflow: hidden;
+}
+#tv-volume .tv-vol-fill {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  border-radius: calc(var(--vu) * 0.3);
+  background: #fff;
+  transition: height 0.12s ease-out;
+}
+#tv-volume .tv-vol-icon {
+  position: absolute;
+  left: 50%; bottom: calc(var(--vu) * 1.8);
+  width: calc(var(--vu) * 1.5); height: calc(var(--vu) * 1.5);
+  margin-left: calc(var(--vu) * -0.75);
+}
+#tv-volume .tv-vol-body { fill: #fff; }
+#tv-volume .tv-vol-waves, #tv-volume .tv-vol-x { fill: none; stroke: #fff; stroke-width: 2; stroke-linecap: round; }
+#tv-volume .tv-vol-x { display: none; }
+#tv-volume.tv-vol-muted { color: #9696a0; }
+#tv-volume.tv-vol-muted .tv-vol-fill { background: rgba(255, 255, 255, 0.35); }
+#tv-volume.tv-vol-muted .tv-vol-body { fill: #9696a0; }
+#tv-volume.tv-vol-muted .tv-vol-waves { display: none; }
+#tv-volume.tv-vol-muted .tv-vol-x { display: inline; stroke: #9696a0; }
