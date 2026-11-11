@@ -586,6 +586,11 @@ class Home(AccountsUI, JellyfinUI, QObject):
         self.saver = None
         return True
 
+    def remote_connected(self):
+        """Fernbedienung hat sich wieder verbunden – das war ein Tastendruck (siehe remote_input)."""
+        if self.activity():
+            self.push()
+
     def sleep_left(self):
         """Verbleibende Minuten des Sleep-Timers (aufgerundet), 0 = aus."""
         if not self.sleep_at:
@@ -1217,7 +1222,8 @@ def main():
         sys.exit("RaspiTV läuft bereits (Port 8765 ist belegt).")
     # Bluetooth-Fernbedienungen direkt lesen (auch während der Player vorne liegt)
     home.set_remotes(network.bt_remotes())
-    home.remote_input = remote_input.RemoteInput(remote.press, home.remote_extra, lambda: home.remote_macs)
+    home.remote_input = remote_input.RemoteInput(remote.press, home.remote_extra, lambda: home.remote_macs,
+                                                   lambda: home.bgDone.emit(home.remote_connected))
     # Kopplungsanfragen beantwortet RaspiTV selbst – kein Desktop-Fenster über der Oberfläche
     agent = network.BtAgent(home.bt_allow)
     # Schlafende Fernbedienung beim nächsten Tastendruck sofort wieder verbinden

@@ -40,6 +40,20 @@ def set_status(name):
         pass
 
 
+def wait_for_network(seconds):
+    """Wartet bis zu `seconds` auf eine Internet-Verbindung (Namensauflösung von github.com)."""
+    import socket
+    end = time.monotonic() + seconds
+    while True:
+        try:
+            socket.getaddrinfo("github.com", 443)
+            return True
+        except OSError:
+            if time.monotonic() >= end:
+                return False
+            time.sleep(1)
+
+
 def update():
     """Nach Updates suchen (läuft im Terminal, Ausgabe von git bleibt dort sichtbar)."""
     time.sleep(1)  # „Starte …“ kurz stehen lassen
@@ -50,7 +64,18 @@ def update():
         return subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT, capture_output=True, text=True).stdout
 
     before = head()
-    subprocess.run(["git", "pull", "--ff-only"], cwd=ROOT)  # ohne Netz geht es mit der alten Version weiter
+    # Ohne Netz (z. B. im Urlaub) startet einfach die vorhandene Version; beim nächsten Start wird es
+    # wieder versucht. Gewartet wird nur kurz aufs WLAN, und git darf nie hängen bleiben (WLAN ohne
+    # Internet, Hotel-Anmeldeseite): Zeitlimit, keine Passwortabfrage, Abbruch bei Stillstand.
+    if wait_for_network(5):
+        try:
+            subprocess.run(["git", "-c", "http.lowSpeedLimit=1000", "-c", "http.lowSpeedTime=10",
+                            "pull", "--ff-only"], cwd=ROOT, timeout=40, stdin=subprocess.DEVNULL,
+                           env={**os.environ, "GIT_TERMINAL_PROMPT": "0", "GIT_ASKPASS": "true"})
+        except subprocess.TimeoutExpired:
+            print("Update abgebrochen (Netz zu langsam) – RaspiTV startet mit der vorhandenen Version")
+    else:
+        print("Kein Netz – RaspiTV startet ohne Update")
     time.sleep(max(0, 1.2 - (time.monotonic() - started)))  # Text lesbar lassen
     set_status("updated" if head() != before else "current")
 

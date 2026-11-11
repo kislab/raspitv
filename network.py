@@ -267,10 +267,25 @@ class RemoteKeeper:
     Deshalb läuft für jede getrennte Fernbedienung ständig ein Verbindungsversuch im Hintergrund.
     `paused()` hält das an (Bluetooth-Suche/Koppeln in den Einstellungen)."""
 
+    KEEPALIVE = 30  # Sekunden zwischen zwei „Herzschlägen“ an eine verbundene Fernbedienung
+
     def __init__(self, remote_macs, paused):
         self.remote_macs = remote_macs
         self.paused = paused
+        self.beat = {}  # MAC -> Zeitpunkt des letzten Herzschlags
         threading.Thread(target=self.run, daemon=True).start()
+
+    def keepalive(self, mac):
+        """Verbundene Fernbedienung regelmäßig ansprechen (Akkustand per Funk lesen), damit die
+        Verbindung nicht wegen Funkstille einschläft."""
+        now = time.monotonic()
+        if now - self.beat.get(mac, 0) < self.KEEPALIVE:
+            return
+        self.beat[mac] = now
+        path = _battery_char(mac)
+        if path:
+            _run(["busctl", "call", "org.bluez", path, "org.bluez.GattCharacteristic1",
+                  "ReadValue", "a{sv}", "0"], timeout=10)
 
     def run(self):
         while True:
@@ -279,6 +294,9 @@ class RemoteKeeper:
                 time.sleep(3)
                 continue
             waiting = [m for m in macs if not _connected(m)]
+            for mac in macs:
+                if mac not in waiting:
+                    self.keepalive(mac)
             if not waiting:
                 time.sleep(3)
                 continue
@@ -288,6 +306,18 @@ class RemoteKeeper:
                 # BlueZ wartet bis zu ~30 s auf das Gerät; danach einfach neu versuchen
                 _run(["bluetoothctl", "--timeout", "35", "connect", mac], timeout=45)
             time.sleep(0.5)
+
+
+def _battery_char(mac):
+    """D-Bus-Pfad der Akkustand-Eigenschaft (GATT 2A19) einer verbundenen Fernbedienung oder None."""
+    device = "/org/bluez/hci0/dev_" + mac.upper().replace(":", "_")
+    ok, out = _run(["busctl", "tree", "org.bluez", "--list"], timeout=5)
+    for path in out.splitlines() if ok else ():
+        if path.startswith(device + "/service") and "/char" in path and "/desc" not in path:
+            ok, uuid = _run(["busctl", "get-property", "org.bluez", path, "org.bluez.GattCharacteristic1", "UUID"], timeout=5)
+            if ok and "00002a19-" in uuid:
+                return path
+    return None
 
 
 def bt_remote_paired():

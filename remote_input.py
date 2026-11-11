@@ -66,10 +66,15 @@ def remote_devices(remote_macs=()):
 class RemoteInput:
     """Liest alle Fernbedienungen in einem Hintergrund-Thread; neue Geräte werden alle 3 s gesucht."""
 
-    def __init__(self, press, extra=None, remote_macs=lambda: ()):
+    def __init__(self, press, extra=None, remote_macs=lambda: (), connected=None):
         self.press = press          # press(key) – wie eine Taste von remote.py
         self.extra = extra          # extra(key) – Lautstärke usw., die RaspiTV selbst erledigt
         self.remote_macs = remote_macs  # Adressen gekoppelter Fernbedienungen
+        # connected() – eine Fernbedienung hat sich (wieder) verbunden. Eine schlafende Fernbedienung
+        # verbindet sich erst durch einen Tastendruck, und genau dieser Druck kommt nie an – das
+        # Verbinden selbst gilt deshalb als Tastendruck (weckt z. B. den Bildschirm).
+        self.connected = connected
+        self.scanned = False
         self.open = {}              # Pfad -> Dateideskriptor
         self.ok_down = None
         threading.Thread(target=self.run, daemon=True).start()
@@ -82,9 +87,12 @@ class RemoteInput:
                 fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK)
                 fcntl.ioctl(fd, EVIOCGRAB, 1)   # Tasten nur noch für RaspiTV
                 self.open[path] = fd
-                print(f"Fernbedienung erkannt: {path}", flush=True)
+                print(f"{time.strftime('%H:%M:%S')} Fernbedienung erkannt: {path}", flush=True)
+                if self.scanned and self.connected:
+                    self.connected()
             except OSError:
                 pass
+        self.scanned = True  # beim ersten Suchen (Programmstart) nicht wecken
 
     def close(self, path):
         try:
@@ -95,7 +103,7 @@ class RemoteInput:
     def run(self):
         last_scan = 0.0
         while True:
-            if time.monotonic() - last_scan > 3:
+            if time.monotonic() - last_scan > 1:  # schnell, damit Tasten direkt nach dem Verbinden ankommen
                 self.rescan()
                 last_scan = time.monotonic()
             if not self.open:
