@@ -22,7 +22,7 @@ Item {
 
     Item {
         id: box
-        width: 4 * app.u; height: 22 * app.u
+        width: 4 * app.u; height: 19 * app.u
         x: 4 * app.u
         anchors.verticalCenter: parent.verticalCenter
         opacity: osd.shown ? 1 : 0
@@ -64,7 +64,7 @@ Item {
             Icon {
                 anchors.horizontalCenter: parent.horizontalCenter
                 y: parent.height - 2.2 * app.u - height / 2
-                width: 1.8 * app.u
+                width: 2 * app.u
                 name: osd.muted || osd.value === 0 ? "mute" : "sound"
                 color: osd.muted ? app.muted : "white"
             }

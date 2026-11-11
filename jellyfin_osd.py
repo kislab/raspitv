@@ -155,7 +155,7 @@ def speaker(cx, cy, s, rgb, opacity, muted):
 def volume(value, muted):
     """Senkrechte Lautstärke-Leiste links – wie in RaspiTV (qml/VolumeOsd.qml) und in Netflix & Co."""
     u = 24  # RaspiTV-Einheit bei 1920 px Breite
-    w, h = 4 * u, 22 * u
+    w, h = 4 * u, 19 * u
     x, y = 4 * u, (H - h) / 2
     fg = (150, 150, 160) if muted else (255, 255, 255)
     out = [shape(rounded(x, y + 0.3 * u, w, h, w / 2), (0, 0, 0), 0.3),   # leichter Schatten

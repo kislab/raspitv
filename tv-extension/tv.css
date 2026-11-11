@@ -66,8 +66,8 @@ html { scrollbar-width: none; scroll-behavior: smooth; }
   --vu: 1.25vw;
   position: fixed;
   left: calc(var(--vu) * 4); top: 50%;
-  width: calc(var(--vu) * 4); height: calc(var(--vu) * 22);
-  margin-top: calc(var(--vu) * -11);
+  width: calc(var(--vu) * 4); height: calc(var(--vu) * 19);
+  margin-top: calc(var(--vu) * -9.5);
   box-sizing: border-box;
   border-radius: calc(var(--vu) * 2);
   background: rgb(20, 20, 28);
