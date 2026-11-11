@@ -114,6 +114,7 @@ class Home(AccountsUI, JellyfinUI, QObject):
         self.pairing_until = 0.0       # bis wann der Bluetooth-Agent Kopplungen annimmt
         self.ticks = 0
         self.volume = None
+        self.outputs = []  # Audio-Ausgänge (für Einstellungen → Ton)
         self.vol = {"value": 0, "muted": False, "seq": 0}  # Lautstärke-Anzeige (seq zählt Tastendrücke)
         self.dialog = None            # {"text", "buttons": [(label, fn)], "index", "app"?}
         self.menu = None               # Kachel-Menü: {"items": [(label, fn)], "index", "title", "anchor", "at"}
@@ -534,12 +535,71 @@ class Home(AccountsUI, JellyfinUI, QObject):
     def open_settings(self):
         self.view = "settings"
         self.volume = cfg.get_volume()
+        self.outputs = cfg.audio_outputs()
         self.build_items()
         self.pane, self.cat = "cats", 0
         self.select_cat(0)
 
     def close_settings(self):
         self.view = "home"
+
+    # ---------- Audio-Ausgang ----------
+
+    def choose_output(self, out):
+        """Ausgang in den Einstellungen gewählt: umschalten, merken, Testton, Lautstärke des Ausgangs zeigen."""
+        self.set("audio_output", out["name"])
+
+        def work():
+            cfg.set_audio_output(out["id"])
+            return cfg.audio_outputs(), cfg.get_audio()
+
+        def done(result):
+            self.outputs, (volume, muted) = result
+            self.refresh_sound()
+            if volume is not None:
+                self.show_volume(volume, muted)
+        self.run_bg(work, done)
+
+    def refresh_sound(self):
+        """Ton-Seite neu aufbauen (falls offen), Auswahl in der Liste behalten."""
+        self.volume = cfg.get_volume()
+        if self.view != "settings" or self.sub or self.cats[self.cat]["label"] != "Ton":
+            return
+        label = self.items[self.item]["label"] if self.items else None
+        self.build_items()
+        self.items = self.cats[self.cat]["items"]
+        self.item = next((i for i, it in enumerate(self.items) if it["label"] == label and it["kind"] in FOCUSABLE),
+                         min(self.item, len(self.items) - 1))
+
+    def watch_audio(self):
+        """Hintergrund: neue Bluetooth-/USB-Geräte (Kopfhörer, Lautsprecher) automatisch verwenden und
+        zum selbst gewählten Ausgang zurückkehren, wenn so ein Gerät wieder weg ist."""
+        known = {o["name"] for o in cfg.audio_outputs()}
+        while True:
+            time.sleep(2)
+            outputs = cfg.audio_outputs()
+            names = {o["name"] for o in outputs}
+            if not outputs or names == known:
+                continue
+            new = [o for o in outputs if o["name"] not in known and o["kind"] in ("Bluetooth", "USB")]
+            gone = known - names
+            known = names
+            target = None
+            if new and self.settings["audio_auto"]:
+                target = new[0]
+            elif gone and not any(o["active"] for o in outputs if o["kind"] in ("Bluetooth", "USB")):
+                target = next((o for o in outputs if o["name"] == self.settings["audio_output"]), None)
+            if target and not target["active"]:
+                cfg.set_audio_output(target["id"], sound=False)
+                outputs = cfg.audio_outputs()
+            volume, muted = cfg.get_audio()
+
+            def update(outputs=outputs):
+                self.outputs = outputs
+                self.refresh_sound()
+            self.bgDone.emit(update)
+            if target and volume is not None:
+                self.show_volume(volume, muted)  # zeigt, dass (und wie laut) jetzt dort Ton kommt
 
     def select_cat(self, index):
         """Kategorie wählen: rechts deren Zeilen zeigen, oben beginnen."""
@@ -569,6 +629,17 @@ class Home(AccountsUI, JellyfinUI, QObject):
                          "run": (lambda app=app: self.ask_uninstall(app)) if len(self.apps) > 1 else (lambda: None)})
         sound = ([{"kind": "range", "label": "Lautstärke", "value": lambda: f"{self.volume} %", "change": volume}]
                  if self.volume is not None else [{"kind": "info", "label": "Lautstärke", "value": "kein Audiogerät gefunden"}])
+        outputs = self.outputs
+        if outputs:
+            sound.append({"kind": "header", "label": "Ton ausgeben über"})
+            for out in outputs:
+                sound.append({"kind": "action", "label": out["label"],
+                              "hint": "✓  Aktiv" if out["active"] else out["kind"] or "Auswählen",
+                              "run": lambda out=out: self.choose_output(out)})
+            sound.append({"kind": "toggle", "label": "Neue Geräte automatisch verwenden",
+                          "value": lambda: s["audio_auto"],
+                          "change": lambda step: self.set("audio_auto", not s["audio_auto"])})
+            sound.append({"kind": "action", "label": "Testton abspielen", "hint": "", "run": cfg.play_test_sound})
 
         self.cats = [
             {"label": "Konto", "icon": "account", "desc": "Wer gerade schaut und eigene Logins",
@@ -586,7 +657,7 @@ class Home(AccountsUI, JellyfinUI, QObject):
              ]},
             {"label": "Apps", "icon": "apps", "desc": "Installierte Apps löschen – neue gibt es unter „Verfügbare Apps“",
              "items": apps},
-            {"label": "Ton", "icon": "sound", "desc": "Lautstärke des Geräts", "items": sound},
+            {"label": "Ton", "icon": "sound", "desc": "Lautstärke und Ausgang: HDMI, Klinke, Bluetooth", "items": sound},
             {"label": "System", "icon": "power", "desc": "Netzwerk, Start, Updates und Ausschalten",
              "items": [
                  {"kind": "header", "label": "Verbindungen"},
@@ -932,6 +1003,8 @@ def main():
     agent = network.BtAgent(home.bt_allow)
     # Schlafende Fernbedienung beim nächsten Tastendruck sofort wieder verbinden
     network.RemoteKeeper(lambda: home.remote_macs, home.bt_busy)
+    # Neue Bluetooth-/USB-Audiogeräte automatisch verwenden (Einstellungen → Ton)
+    threading.Thread(target=home.watch_audio, daemon=True).start()
 
     app.aboutToQuit.connect(player.stop)
     app.aboutToQuit.connect(agent.stop)

@@ -31,6 +31,9 @@ Mediacenter für den Raspberry Pi 4 im Stil von Google TV – bedienbar mit der 
 - **Lautstärke**: Lautstärke-Tasten der Fernbedienung stellen den Standard-Audioausgang (PipeWire); unter 20 % in
   2er-, sonst in 5er-Schritten, „lauter“ hebt Stumm auf. Anzeige als senkrechte Leiste links – gleich in RaspiTV
   (`qml/VolumeOsd.qml`), im Jellyfin-Player (`jellyfin_osd.volume`) und in Netflix/Disney+/Prime (`tv-extension/tv.js`).
+  Einstellungen → Ton → **Ton ausgeben über**: HDMI (mit dem Namen des Fernsehers aus dessen EDID), Klinke,
+  Bluetooth- und USB-Geräte; Auswahl mit Testton. „Neue Geräte automatisch verwenden“: verbindet sich ein
+  Bluetooth-/USB-Audiogerät, kommt der Ton dort heraus, ist es wieder weg, zurück zum selbst gewählten Ausgang.
 - **Fernbedienung**: HTTP-Schnittstelle auf `127.0.0.1:8765` (`POST /key {"key": "up"}`, `"menu"` = langes OK,
   `"volumeup"`/`"volumedown"`/`"mute"`, `GET /status`).
 

@@ -4,6 +4,7 @@ import os
 import re
 import socket
 import subprocess
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
@@ -24,6 +25,8 @@ DEFAULTS = {
     "jellyfin_user_id": "",
     "jellyfin_user": "",
     "jellyfin_device": "",   # Geräte-ID von RaspiTV gegenüber Jellyfin
+    "audio_auto": True,      # neue Bluetooth-/USB-Audiogeräte automatisch verwenden
+    "audio_output": "",      # zuletzt selbst gewählter Ausgang (node.name) – zurück dorthin, wenn ein Gerät geht
 }
 
 
@@ -220,6 +223,85 @@ def volume_key(key):
         return target, muted
     except (OSError, subprocess.SubprocessError):
         return volume, muted
+
+
+# ---------- Audio-Ausgang (PipeWire) ----------
+
+TEST_SOUND = "/usr/share/sounds/freedesktop/stereo/audio-volume-change.oga"
+KIND_ORDER = {"HDMI": 0, "Bluetooth": 1, "USB": 2, "Klinke": 3, "": 4}
+
+
+def _hdmi_name(port):
+    """Name des Fernsehers/Bildschirms an HDMI-Anschluss `port` (1 oder 2) aus dessen EDID, sonst ""."""
+    for edid in Path("/sys/class/drm").glob(f"card*-HDMI-A-{port}/edid"):
+        try:
+            data = edid.read_bytes()
+        except OSError:
+            continue
+        for i in range(54, 126, 18):  # Beschreibungsblöcke; 0xFC = Gerätename
+            block = data[i:i + 18]
+            if len(block) == 18 and block[:3] == b"\0\0\0" and block[3] == 0xFC:
+                return block[5:].split(b"\n")[0].decode("ascii", "replace").strip()
+    return ""
+
+
+def audio_outputs():
+    """Alle Audio-Ausgänge: [{"id", "name", "label", "kind", "active"}], HDMI zuerst, Klinke zuletzt."""
+    try:
+        dump = json.loads(subprocess.run(["pw-dump"], capture_output=True, text=True, timeout=4).stdout or "[]")
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return []
+    default = ""
+    for obj in dump:
+        if obj.get("type") == "PipeWire:Interface:Metadata" and (obj.get("props") or {}).get("metadata.name") == "default":
+            for entry in obj.get("metadata") or []:
+                if entry.get("key") == "default.audio.sink":
+                    value = entry.get("value")
+                    default = (value.get("name") if isinstance(value, dict) else
+                               (json.loads(value).get("name") if isinstance(value, str) and value.startswith("{") else "")) or ""
+    outputs = []
+    for obj in dump:
+        props = (obj.get("info") or {}).get("props") or {}
+        if props.get("media.class") != "Audio/Sink":
+            continue
+        name, desc = props.get("node.name", ""), props.get("node.description", "")
+        card = props.get("api.alsa.card.name", "")
+        hdmi = re.match(r"vc4-hdmi-(\d)", card)
+        if hdmi:
+            port = int(hdmi.group(1)) + 1
+            screen = _hdmi_name(port)
+            kind, label = "HDMI", f"{screen} (HDMI {port})" if screen else f"Fernseher (HDMI {port})"
+        elif "Headphones" in card:
+            kind, label = "Klinke", "Klinke (Kopfhörer, Boxen)"
+        elif props.get("device.api") == "bluez5":
+            kind, label = "Bluetooth", desc
+        elif props.get("device.bus") == "usb" or "usb" in name:
+            kind, label = "USB", desc
+        else:
+            kind, label = "", desc or name
+        outputs.append({"id": obj["id"], "name": name, "label": label, "kind": kind, "active": name == default})
+    outputs.sort(key=lambda o: (KIND_ORDER.get(o["kind"], 4), o["label"]))
+    return outputs
+
+
+def play_test_sound():
+    """Kurzer Ton über den aktuellen Ausgang (kehrt sofort zurück)."""
+    if Path(TEST_SOUND).exists():
+        try:
+            subprocess.Popen(["pw-play", TEST_SOUND], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except OSError:
+            pass
+
+
+def set_audio_output(output_id, sound=True):
+    """Ton über diesen Ausgang (laufende Wiedergaben wechseln mit); kurzer Testton zur Bestätigung."""
+    try:
+        subprocess.run(["wpctl", "set-default", str(output_id)], timeout=3, check=False)
+    except (OSError, subprocess.SubprocessError):
+        return
+    if sound:
+        time.sleep(0.3)  # bis der Ausgang bereit ist
+        play_test_sound()
 
 
 # ---------- Updates (GitHub) ----------
