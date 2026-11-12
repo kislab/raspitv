@@ -222,3 +222,16 @@ html.tv-disney #nftv .dp-pin-pic { width: calc(var(--u) * 7); height: calc(var(-
 }
 .dp-pin-action.nf-on { background: #f9f9f9; color: #13151f; transform: scale(1.06); }
 #nftv .dp-pin-key, #nftv .dp-pin-action { cursor: pointer !important; }
+
+/* ---------- Player ---------- */
+/* Disneys eigene Bedienteile unsichtbar (Untertitel, Altersfreigabe und Werbe-Hinweise bleiben) – bedient wird
+   über die eigene Leiste (disney-tv.js). opacity statt display: Disneys Logik und „Überspringen“ laufen weiter. */
+html.tv-disney main-app-controls-overlay, html.tv-disney title-overlay, html.tv-disney pivot-tray-overlay,
+html.tv-disney skip-overlay, html.tv-disney up-next-lite, html.tv-disney inactivity-overlay {
+  opacity: 0 !important; pointer-events: none !important;
+}
+html.tv-disney #tv-player-bar { font-family: "Inspire", "Avenir Next", "Nunito Sans", Arial, sans-serif; }
+html.tv-disney #tv-player-bar .tv-pb-fill { background: #fff; }
+html.tv-disney #tv-player-bar .tv-pb-knob { background: #fff; box-shadow: 0 0 0 calc(var(--u) * 0.4) rgba(255, 255, 255, 0.3); }
+html.tv-disney #tv-player-bar .tv-pb-icon { background: #fff; color: #0e0b14; }
+html.tv-disney #tv-skip { font-family: "Inspire", "Avenir Next", "Nunito Sans", Arial, sans-serif; }

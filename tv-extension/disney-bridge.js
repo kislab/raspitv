@@ -92,7 +92,20 @@
     return true;
   }
 
+  // Was läuft gerade? Disneys Player fragt beim Start playerExperience/<availId> ab – dieselbe Abfrage liefert
+  // Titel, Folge und Laufzeit (das Video selbst meldet als Dauer „unendlich“).
+  async function playerInfo() {
+    const url = [...seen].reverse().find((u) => /\/explore\/v1\.\d+\/playerExperience\//.test(u));
+    if (!url) return null;
+    const data = await get(url.replace(/\/v1\.\d+\//, "/v1.21/"));
+    const p = data?.data?.playerExperience || data?.data || {};
+    const json = JSON.stringify(p);
+    const runtime = Number((json.match(/"runtimeMs":(\d+)/) || [])[1] || 0);
+    return { availId: p.availId || "", title: p.title || "", sub: p.subtitle || "", duration: runtime / 1000 };
+  }
+
   const ops = {
+    player: () => playerInfo(),
     hidden: async ({ on }) => setHidden(on),
     navigate: async ({ path }) => navigate(path),
     ready: async () => ({ ready: !!auth }),

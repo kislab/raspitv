@@ -277,7 +277,10 @@
   /** Eintrag der Schnittstelle → Karte (wie bisher cardData) */
   function apiCard(item, style) {
     const v = item.visuals || {};
-    const action = (item.actions || []).find((a) => a.pageId || a.deeplinkId) || {};
+    const playAction = (item.actions || []).find((a) => a.type === "playback");
+    const browseAction = (item.actions || []).find((a) => a.pageId);
+    // „Weiterschauen“ spielt wie in der Disney-TV-App direkt weiter, alle anderen öffnen die Detailseite
+    const action = (/continue/.test(style || "") && playAction) || browseAction || playAction || {};
     const tall = TALL.test(style || "");
     const playable = action.type === "playback";
     const pct = item.personalization?.userState?.progress?.progressPercentage;
@@ -699,6 +702,7 @@
   function openCard(card, from) {
     if (!card || !card.href) return;
     S.returnZone = from;
+    if (/\/play\//.test(card.href)) S.playInfo = { title: card.label, sub: card.sub, at: Date.now() };
     S.navAt = Date.now();
     S.navTarget = /\/play\//.test(card.href) ? /\/play\// : /\/browse\/entity-/;
     go(card.href); // Disneys Router, ohne Neuladen
@@ -737,7 +741,10 @@
       buttons.append(b);
       dom.dButtons.push({ el: b, action });
     };
-    d.actions.forEach((a, i) => addButton(i === 0 ? "play" : "restart", titleCase(a.label), () => play(a.el), i === 0));
+    d.actions.forEach((a, i) => addButton(i === 0 ? "play" : "restart", titleCase(a.label), () => {
+      S.playInfo = { title: d.title, sub: d.focused || "", at: Date.now() };
+      play(a.el);
+    }, i === 0));
     if (d.watch) addButton(d.watch.added ? "check" : "mylist", "Meine Liste", () => d.watch.el.click());
     info.append(buttons);
     page.append(info);
@@ -850,6 +857,7 @@
   }
 
   function openItem(it) {
+    if (it.episode) S.playInfo = { title: S.d && S.d.title, sub: it.title, at: Date.now() };
     if (it.episode) play(it.el);
     else it.el.click(); // Empfehlung: deren Detailseite öffnen
   }
@@ -916,22 +924,125 @@
     });
   }
 
+  // ---------- Eigene Player-Leiste (wie Netflix): Titel, Zeit, Fortschritt, Hinweise ----------
+  // Disneys eigene Leiste ist ausgeblendet (disney-tv.css). Gesteuert wird direkt am Video.
+  const ICON_PLAY = '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M7 4l13 8-13 8z"/></svg>';
+  const ICON_PAUSE = '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M6 4h4v16H6zM14 4h4v16h-4z"/></svg>';
+  let bar = null, skipPill = null, barTimer = null;
+  const clock = (sec) => {
+    sec = Math.max(0, Math.floor(sec));
+    const hh = Math.floor(sec / 3600), mm = Math.floor((sec % 3600) / 60), ss = sec % 60;
+    return (hh ? `${hh}:${String(mm).padStart(2, "0")}` : `${mm}`) + `:${String(ss).padStart(2, "0")}`;
+  };
+  function buildBar() {
+    bar = h("div");
+    bar.id = "tv-player-bar";
+    const titles = h("div", "tv-pb-titles");
+    titles.append(h("div", "tv-pb-title"), h("div", "tv-pb-sub"));
+    const row = h("div", "tv-pb-row");
+    const track = h("div", "tv-pb-track");
+    track.append(h("div", "tv-pb-fill"), h("div", "tv-pb-knob"));
+    row.append(h("div", "tv-pb-icon"), h("div", "tv-pb-time tv-pb-now"), track, h("div", "tv-pb-time tv-pb-left"));
+    bar.append(titles, row, h("div", "tv-pb-hint"));
+    skipPill = h("div");
+    skipPill.id = "tv-skip";
+    skipPill.append(h("span", "tv-skip-ok", "OK"), h("span"));
+    document.documentElement.append(bar, skipPill);
+  }
+  // Titel, Folge und Dauer der laufenden Wiedergabe (aus Disneys Schnittstelle, über die Brücke)
+  let playerInfo = null, playerInfoPath = "", playerInfoAt = 0;
+  function refreshPlayerInfo() {
+    if (!isPlayer()) return void (playerInfo = null, playerInfoPath = "");
+    if (playerInfoPath === location.pathname && playerInfo && playerInfo.duration) return;
+    if (Date.now() - playerInfoAt < 3000) return;
+    playerInfoAt = Date.now();
+    const path = location.pathname;
+    bridge("player").then((info) => {
+      if (info && isPlayer() && location.pathname === path) {
+        playerInfo = info;
+        playerInfoPath = path;
+      }
+    }).catch(() => {});
+  }
+
+  /** Leiste zeigen (bzw. aktualisieren); läuft das Video, nach 4 s wieder ausblenden */
+  function showBar(hint, keep) {
+    const v = playingVideo();
+    if (!v || !isPlayer()) return;
+    if (!bar) buildBar();
+    const title = (document.title || "").replace(/\s*\|\s*Disney\+\s*$/, "");
+    const info = playerInfo && playerInfoPath === location.pathname ? playerInfo
+      : S.playInfo && S.playInfo.at > Date.now() - 6 * 3600e3 ? S.playInfo : null;
+    bar.querySelector(".tv-pb-title").textContent = (info && info.title) || title;
+    bar.querySelector(".tv-pb-sub").textContent = (info && info.sub) || "";
+    bar.querySelector(".tv-pb-icon").innerHTML = v.paused ? ICON_PLAY : ICON_PAUSE;
+    // Disneys Video meldet als Dauer „unendlich“ (gestückelt geladen) – Laufzeit aus der Schnittstelle
+    const dur = v.duration && isFinite(v.duration) ? v.duration : (info && info.duration) || 0;
+    const ratio = dur ? Math.min(1, v.currentTime / dur) : 0;
+    bar.querySelector(".tv-pb-fill").style.width = `${ratio * 100}%`;
+    bar.querySelector(".tv-pb-knob").style.left = `${ratio * 100}%`;
+    bar.querySelector(".tv-pb-now").textContent = clock(v.currentTime);
+    const left = dur - v.currentTime;
+    bar.querySelector(".tv-pb-left").textContent = !dur ? "" : left >= 60 ? `noch ${Math.round(left / 60)} Min.` : `noch ${clock(left)}`;
+    bar.querySelector(".tv-pb-hint").textContent = hint || (v.paused ? "Pausiert – OK zum Fortsetzen" : "◀ ▶ 10 Sekunden  ·  ▲ ▼ 1 Minute");
+    bar.classList.add("tv-pb-show");
+    clearTimeout(barTimer);
+    if (!v.paused && !keep) barTimer = setTimeout(() => bar.classList.remove("tv-pb-show"), 4000);
+  }
+  function hideBar() {
+    if (bar) bar.classList.remove("tv-pb-show");
+    if (skipPill) skipPill.classList.remove("tv-skip-show");
+  }
+  function seek(seconds) {
+    const v = playingVideo();
+    if (!v) return;
+    const known = playerInfo && playerInfoPath === location.pathname ? playerInfo.duration : 0;
+    const dur = v.duration && isFinite(v.duration) ? v.duration : known || Infinity;
+    v.currentTime = Math.min(Math.max(0, v.currentTime + seconds), dur - 2);
+    showBar(`${seconds < 0 ? "−" : "+"}${Math.abs(seconds) >= 60 ? `${Math.abs(seconds) / 60} Min.` : `${Math.abs(seconds)} Sek.`}`);
+  }
+  // „Intro überspringen“ / „Nächste Folge“: als Pille zeigen, OK drückt sie
+  setInterval(() => {
+    refreshPlayerInfo();
+    if (!isPlayer()) return hideBar();
+    if (!skipPill) buildBar();
+    const skip = skipButton();
+    const label = skip ? (skip.textContent || skip.getAttribute("aria-label") || "").replace(/\s+/g, " ").trim() : "";
+    skipPill.classList.toggle("tv-skip-show", !!skip);
+    if (label && skipPill.lastChild.textContent !== label) skipPill.lastChild.textContent = label;
+    if (bar && bar.classList.contains("tv-pb-show")) showBar(bar.querySelector(".tv-pb-hint").textContent, true);
+  }, 500);
+
   Object.assign(TV.site, {
     inPlayer: isPlayer,
     playerKey(key) {
       if (key === "back") {
+        hideBar();
         history.back();
         return true;
       }
-      wakeControls(); // Disney-Leiste einblenden, damit man sieht, was passiert
       const v = playingVideo();
+      if (!v) return true;
       if (key === "ok") {
         const skip = skipButton();
-        if (skip) skip.click();
-        else if (v) v.paused ? v.play() : v.pause();
-      } else if ((key === "left" || key === "right") && v) {
-        v.currentTime = Math.max(0, v.currentTime + (key === "left" ? -10 : 10));
-      }
+        if (skip) {
+          skip.click();
+          showBar("Übersprungen");
+        } else {
+          v.paused ? v.play() : v.pause();
+          setTimeout(() => showBar(), 60);
+        }
+      } else if (key === "left" || key === "right") seek(key === "left" ? -10 : 10);
+      else if (key === "up" || key === "down") seek(key === "down" ? -60 : 60);
+      else showBar();
+      return true;
+    },
+    playPause() {
+      if (!isPlayer()) return false;
+      const v = playingVideo();
+      if (!v) return false;
+      v.paused ? v.play() : v.pause();
+      setTimeout(() => showBar(), 60);
       return true;
     },
   });

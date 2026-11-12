@@ -121,6 +121,8 @@ class Home(AccountsUI, JellyfinUI, QObject):
         self.modes = []    # Auflösungen des Bildschirms (für Einstellungen → Darstellung)
         self.mode_pending = None  # gerade umgeschaltet, Antwort auf „Bild in Ordnung?“ steht aus
         self.rate_restore = None  # Bildraten-Anpassung: (Ausgang, Modus) zum Zurückstellen nach dem Video
+        self.base_mode = None     # Grund-Bildrate (beim Start bzw. nach Wahl in den Einstellungen)
+        self.rate_lock = threading.Lock()
         self.vol = {"value": 0, "muted": False, "seq": 0}  # Lautstärke-Anzeige (seq zählt Tastendrücke)
         self.last_input = time.monotonic()  # letzter Tastendruck (Bildschirmschoner, Bildschirm aus)
         self.saver = None              # None | "clock" (Bildschirmschoner) | "off" (Bildschirm aus)
@@ -796,6 +798,7 @@ class Home(AccountsUI, JellyfinUI, QObject):
             def keep():
                 self.mode_pending = None
                 self.set("display_mode", mode["mode"])
+                self.base_mode = (mode["output"], mode["mode"])
                 self.close_dialog()
 
             def revert():
@@ -819,22 +822,31 @@ class Home(AccountsUI, JellyfinUI, QObject):
             return
 
         def apply():
-            if not self.settings["match_rate"] or not (self.player.running() or self.mpv.running()):
-                return
-            target = cfg.mode_for_rate(fps)
-            current = cfg.current_display_mode()
-            if not target or target[1] == current[1]:
-                return
-            if self.rate_restore is None:
-                self.rate_restore = current
-            cfg.set_display_mode(*target)
+            with self.rate_lock:
+                if not self.settings["match_rate"] or not (self.player.running() or self.mpv.running()):
+                    return
+                target = cfg.mode_for_rate(fps)
+                current = cfg.current_display_mode()
+                if not target or target[1] == current[1]:
+                    return
+                if self.base_mode is None:
+                    self.base_mode = current
+                self.rate_restore = self.base_mode
+                cfg.set_display_mode(*target)
         threading.Thread(target=apply, daemon=True).start()
 
     def restore_rate(self):
-        """Nach dem Video: zurück zur vorigen Bildrate."""
-        restore, self.rate_restore = self.rate_restore, None
-        if restore and restore[0]:
-            threading.Thread(target=cfg.set_display_mode, args=restore, daemon=True).start()
+        """Nach dem Video: zurück zur Grund-Bildrate (die beim Start bzw. die gewählte – nie eine angepasste)."""
+        if not self.rate_restore:
+            return
+        self.rate_restore = None
+
+        def work():
+            with self.rate_lock:
+                base = self.base_mode
+                if base and base[0] and cfg.current_display_mode()[1] != base[1]:
+                    cfg.set_display_mode(*base)
+        threading.Thread(target=work, daemon=True).start()
 
     def refresh_modes(self):
         self.modes = cfg.display_modes()
@@ -1341,7 +1353,10 @@ def main():
     # Bluetooth-Fernbedienungen direkt lesen (auch während der Player vorne liegt)
     home.set_remotes(network.bt_remotes())
     # gewählte Auflösung setzen (z. B. Full HD statt 4K mit 30 Hz, das der Fernseher von sich aus nimmt)
-    threading.Thread(target=cfg.apply_display_mode, args=(home.settings["display_mode"],), daemon=True).start()
+    def start_mode():
+        cfg.apply_display_mode(home.settings["display_mode"])
+        home.base_mode = cfg.current_display_mode()  # Grund-Bildrate für die Bildraten-Anpassung
+    threading.Thread(target=start_mode, daemon=True).start()
     home.remote_input = remote_input.RemoteInput(remote.press, home.remote_extra, lambda: home.remote_macs,
                                                    lambda: home.bgDone.emit(home.remote_connected))
     # Kopplungsanfragen beantwortet RaspiTV selbst – kein Desktop-Fenster über der Oberfläche

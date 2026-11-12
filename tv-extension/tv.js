@@ -293,8 +293,10 @@
       gone = 0;
       if (rates.has(main)) report(rates.get(main));
       else if (!main.paused) measureVideo(main);
-    } else if (reported && ++gone >= 2) {
-      report(0); // Player verlassen: normale Bildrate
+    } else if (!document.querySelector("video") || [...document.querySelectorAll("video")].every((v) => v.ended || !v.videoWidth)) {
+      if (reported && ++gone >= 3) report(0); // seit 6 s kein Video mehr: Player verlassen, normale Bildrate
+    } else {
+      gone = 0; // Video noch da (z. B. kurz umgebaut, Werbung): nicht hin- und herschalten
     }
   }, 2000);
 
