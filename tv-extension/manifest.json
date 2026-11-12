@@ -12,6 +12,16 @@
   "content_scripts": [
     {
       "matches": [
+        "https://open.spotify.com/*"
+      ],
+      "js": [
+        "spotify-main.js"
+      ],
+      "world": "MAIN",
+      "run_at": "document_start"
+    },
+    {
+      "matches": [
         "https://www.youtube.com/*",
         "https://m.youtube.com/*",
         "https://www.twitch.tv/*",
@@ -152,6 +162,15 @@
       ],
       "run_at": "document_idle",
       "all_frames": true
+    },
+    {
+      "matches": [
+        "https://www.youtube.com/*"
+      ],
+      "js": [
+        "youtube-keys.js"
+      ],
+      "run_at": "document_start"
     }
   ]
 }

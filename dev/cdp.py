@@ -14,6 +14,8 @@ import base64, json, os, socket, struct, sys, urllib.request
 EXTENSION = "RaspiTV Bedienung"
 
 
+TIMEOUT = float(os.environ.get("CDP_TIMEOUT", 20))  # Sekunden; für lange Tests z. B. CDP_TIMEOUT=60
+
 def targets():
     return json.load(urllib.request.urlopen("http://127.0.0.1:9222/json", timeout=5))
 
@@ -22,7 +24,7 @@ class WS:
     def __init__(self, url):
         host, path = url[5:].split("/", 1)
         name, port = host.split(":")
-        self.s = socket.create_connection((name, int(port)), timeout=20)
+        self.s = socket.create_connection((name, int(port)), timeout=TIMEOUT)
         key = base64.b64encode(os.urandom(16)).decode()
         self.s.sendall((f"GET /{path} HTTP/1.1\r\nHost: {host}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
                         f"Sec-WebSocket-Key: {key}\r\nSec-WebSocket-Version: 13\r\n\r\n").encode())
@@ -94,7 +96,7 @@ def evaluate(expression, extension=False):
             if (msg.get("method") == "Runtime.executionContextCreated" and ctx.get("name") == EXTENSION
                     and ctx.get("auxData", {}).get("frameId") == top):
                 params["contextId"] = ctx["id"]
-        ws.s.settimeout(20)
+        ws.s.settimeout(TIMEOUT)
     result = ws.call("Runtime.evaluate", params)
     if "exceptionDetails" in result:
         details = result["exceptionDetails"]
