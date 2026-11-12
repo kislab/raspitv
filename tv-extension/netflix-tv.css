@@ -2,6 +2,9 @@
 
 /* Netflix-Webseite unsichtbar, solange die eigene Oberfläche aktiv ist */
 html.nftv-on body { opacity: 0 !important; pointer-events: none !important; }
+/* Unsichtbare Original-Seite: ihre Animationen (Lade-Platzhalter u. a.) anhalten – sie erzwangen sonst
+   60 Bilder pro Sekunde mit Stil, Layout und Paint, obwohl nichts davon zu sehen ist */
+html.nftv-on body * { animation-play-state: paused !important; transition: none !important; }
 html.nftv-on { overflow: hidden !important; }
 #nftv { display: none; }
 html.nftv-on #nftv { display: block; }

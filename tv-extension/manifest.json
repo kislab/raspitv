@@ -80,6 +80,15 @@
       "matches": [
         "https://www.primevideo.com/*"
       ],
+      "js": [
+        "prime-boot.js"
+      ],
+      "run_at": "document_start"
+    },
+    {
+      "matches": [
+        "https://www.primevideo.com/*"
+      ],
       "css": [
         "tv.css",
         "netflix-tv.css",

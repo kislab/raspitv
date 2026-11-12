@@ -1,5 +1,11 @@
 /* Prime Video im Stil der Prime-Video-TV-App – ergänzt netflix-tv.css (gemeinsame Bausteine). */
 
+/* Startseite vorgeladen: versteckte Prime-Seite gar nicht mehr berechnen (prime-tv.js, S.asleep) */
+html.tv-prime.pv-asleep body { content-visibility: hidden; }
+/* Beim Laden einer Seite: Original-Seite ausblenden, bis prime-tv.js entschieden hat (prime-boot.js) */
+html.pv-boot { background: #00050d !important; }
+html.pv-boot body { opacity: 0 !important; }
+
 html.tv-prime #nftv {
   --red: #1a98ff; /* Fortschritt in Prime-Blau */
   --pv-bg: #00050d;

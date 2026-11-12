@@ -992,6 +992,7 @@
   function update() {
     const view = computeView();
     document.documentElement.classList.toggle("nftv-on", !!view);
+    if (!view || view !== "loading") document.documentElement.classList.remove("pv-boot"); // prime-boot.js
     if (view) {
       // Vorschau-Videos (Banner-Trailer) der versteckten Seite anhalten – nie den Player
       for (const v of $$("video")) {
@@ -1000,6 +1001,16 @@
         if (!v.paused) v.pause();
       }
     }
+
+    // Startseite fertig vorgeladen: die versteckte Prime-Seite schlafen legen (nicht mehr berechnen,
+    // nicht mehr auslesen) – wie bei Disney+. Sonst liegt Prime auch in Ruhe bei ~120 % CPU.
+    // Nach dem Zurückkommen von anderen Ansichten (Detail, Player) oder einem Seitenwechsel 5 s wach.
+    const here = location.pathname + location.search;
+    if (view !== "home" || S.asleepPath !== here) S.wakeAt = Date.now();
+    S.asleepPath = here;
+    S.asleep = view === "home" && S.view === "home" && S.preloadDone && Date.now() - (S.wakeAt || 0) > 5000;
+    document.documentElement.classList.toggle("pv-asleep", S.asleep);
+    if (S.asleep) return;
 
     if (view === "home") {
       preload();
