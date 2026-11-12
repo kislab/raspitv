@@ -80,7 +80,7 @@ html.tv-disney #nftv .nf-card.dp-tall { width: calc(var(--u) * 18); height: calc
 }
 .dp-season.nf-on { background: #fff; color: #0f1424; }
 .dp-season .nf-icon { width: calc(var(--u) * 2); height: calc(var(--u) * 2); }
-.dp-details { max-width: calc(var(--u) * 110); font-size: calc(var(--u) * 2); line-height: 1.5; color: #cacaca; }
+.dp-details { max-width: calc(var(--u) * 110); font-size: calc(var(--u) * 2); line-height: 1.5; color: #cacaca; white-space: pre-line; }
 html.tv-disney #nftv .nf-ep .nf-ep-sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
 html.tv-disney #nftv .nf-ep.nf-on .nf-ep-pic { box-shadow: 0 0 0 calc(var(--u) * 0.35) #f9f9f9; }
 #nftv .dp-tab { cursor: pointer !important; }

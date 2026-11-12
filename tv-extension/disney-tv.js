@@ -388,6 +388,180 @@
     }
   }
 
+
+  // ---------- Detailseite aus der Schnittstelle ----------
+  // Gleiche Datenform wie früher readDetail(), nur dass "el" kein Element der Disney-Seite ist, sondern ein
+  // kleines Objekt mit click() – so bleiben Aufbau und Tasten der Detailseite unverändert.
+  const details = new Map(); // Entity-Kennung → { data, busy, error }
+  const act = (fn) => ({ click: fn });
+  const entityId = () => (location.pathname.match(/\/browse\/(entity-[0-9a-f-]+)/) || [])[1] || "";
+
+  function episodeItem(it, seriesTitle) {
+    const v = it.visuals || {};
+    const play = (it.actions || []).find((a) => a.type === "playback");
+    const pct = it.personalization?.userState?.progress?.progressPercentage;
+    const mins = v.durationMs ? `${Math.round(v.durationMs / 60000)} Min.` : "";
+    const label = v.seasonNumber && v.episodeNumber ? `S${v.seasonNumber}:F${v.episodeNumber} ` : "";
+    return {
+      el: act(() => play && openPlay(play.deeplinkId, seriesTitle, `${label}${v.episodeTitle || v.title || ""}`)),
+      href: play ? `/play/${play.deeplinkId}` : "",
+      title: `${v.episodeNumber ? `${v.episodeNumber}. ` : ""}${v.episodeTitle || v.title || ""}`,
+      desc: v.description?.brief || v.description?.medium || "",
+      meta: mins,
+      img: imageUrl(artId(v.artwork, "thumbnail", "1.78") || artId(v.artwork, "tile", "1.78"), 400),
+      progress: pct != null ? pct / 100 : null,
+      episode: true,
+    };
+  }
+
+  function openPlay(deeplinkId, title, sub) {
+    if (!deeplinkId) return;
+    S.playInfo = { title, sub, at: Date.now() };
+    S.navAt = Date.now();
+    S.navTarget = /\/play\//;
+    go(`/play/${deeplinkId}`);
+  }
+
+  /** Detailseite laden (bzw. neu laden, z. B. nach „Meine Liste“) */
+  async function loadDetail(id, keepTab) {
+    const entry = details.get(id) || { data: null };
+    details.set(id, entry);
+    if (entry.busy) return;
+    entry.busy = true;
+    try {
+      const res = await explore(`page/${id}?disableSmartFocus=true&enhancedContainersLimit=15&limit=30`);
+      const p = res?.data?.page || {};
+      const v = p.visuals || {};
+      const m = v.metastringParts || {};
+      const playAct = (p.actions || []).find((a) => a.type === "playback");
+      const saves = (p.actions || []).find((a) => a.type === "modifySaves");
+      const tabs = [];
+      const episodes = (p.containers || []).find((c) => c.type === "episodes");
+      const seasons = episodes ? (episodes.seasons || []).map((se) => ({
+        id: se.id, label: se.visuals?.name || "", items: se.items && se.items.length ? se.items : null,
+        total: se.pagination?.totalCount || 0,
+      })) : [];
+      if (episodes) tabs.push({ label: episodes.visuals?.name || "Folgen", kind: "episodes" });
+      const recs = (p.containers || []).find((c) => c.type === "set" && c.items && c.items.length);
+      if (recs) tabs.push({ label: recs.visuals?.name || "Empfehlungen", kind: "recs", items: recs.items, style: recs.style?.name });
+      const det = (p.containers || []).find((c) => c.type === "details");
+      if (det) tabs.push({ label: det.visuals?.name || "Details", kind: "details", det });
+      const old = entry.data;
+      const data = {
+        id,
+        title: v.title || "",
+        bg: imageUrl(artId(v.artwork, "background", "1.78"), 1920),
+        logo: imageUrl(artId(v.artwork, "title_treatment", "3.32", "1.78"), 900),
+        meta: [m.releaseYearRange ? [m.releaseYearRange.startYear, m.releaseYearRange.endYear].filter(Boolean).join("–") : "",
+          ...(m.genres?.values || []).slice(0, 2), seasons.length > 1 ? `${seasons.length} Staffeln` : "",
+          m.runtime?.runtimeMs ? `${Math.round(m.runtime.runtimeMs / 60000)} Min.` : ""].filter(Boolean),
+        ratings: [m.ratingInfo?.rating?.text].filter(Boolean),
+        synopsis: v.description?.medium || v.description?.brief || "",
+        playAct, inWatchlist: !!p.personalization?.userState?.inWatchlist, hasSaves: !!saves,
+        tabs, seasons,
+        tab: keepTab && old ? old.tab : 0,
+        season: keepTab && old ? old.season : 0,
+      };
+      entry.data = data;
+      if (data.tabs[data.tab]?.kind === "episodes") ensureSeason(id, data.season);
+    } catch (e) {
+      entry.error = e.message;
+    } finally {
+      entry.busy = false;
+    }
+  }
+
+  async function ensureSeason(id, index) {
+    const d = details.get(id)?.data;
+    const se = d && d.seasons[index];
+    if (!se || se.items || se.loading) return;
+    se.loading = true;
+    try {
+      const res = await explore(`season/${se.id}?limit=60`);
+      se.items = res?.data?.season?.items || [];
+    } catch (e) {
+      se.items = [];
+    }
+    se.loading = false;
+    d.version = (d.version || 0) + 1; // Neuaufbau
+  }
+
+  function detailsText(det) {
+    const v = det.visuals || {};
+    const lines = [v.description?.full || v.description?.medium || ""];
+    const pair = (x, val) => x && val && lines.push(`${x.label || ""} ${val}`.trim());
+    pair(v.releaseYearRange, [v.releaseYearRange?.startYear, v.releaseYearRange?.endYear].filter(Boolean).join("–"));
+    pair(v.genres, (v.genres?.values || []).join(", "));
+    pair(v.ratingInfo, v.ratingInfo?.rating?.text);
+    for (const k of ["starring", "directors", "creators", "producers"]) pair(v[k], (v[k]?.values || []).join(", "));
+    return lines.filter(Boolean).join("\n");
+  }
+
+  /** Daten in der Form, die buildDetail/renderDetail erwarten */
+  function apiDetailView() {
+    const id = entityId();
+    const d = details.get(id)?.data;
+    if (!d) return null;
+    const tab = d.tabs[d.tab] || {};
+    let items = [];
+    let text = "";
+    if (tab.kind === "episodes") {
+      const se = d.seasons[d.season];
+      items = (se && se.items ? se.items : []).map((it) => episodeItem(it, d.title));
+    } else if (tab.kind === "recs") {
+      items = tab.items.map((it) => {
+        const c = apiCard(it, "standard_art");
+        return { el: act(() => openCard(c, "items")), href: c.href, title: c.label, desc: "", meta: c.meta, img: c.img, progress: null, episode: false };
+      });
+    } else if (tab.kind === "details") {
+      text = detailsText(tab.det);
+    }
+    const playLabel = d.playAct?.visuals?.displayText || "Abspielen";
+    return {
+      key: id,
+      title: d.title,
+      bg: d.bg,
+      logo: d.logo,
+      meta: d.meta,
+      ratings: d.ratings,
+      focused: "",
+      synopsis: d.synopsis,
+      progressText: "",
+      progress: null,
+      actions: d.playAct ? [{ label: playLabel, el: act(() => openPlay(d.playAct.deeplinkId, d.title, "")) }] : [],
+      watch: d.hasSaves ? { added: d.inWatchlist, el: act(() => toggleWatchlist(id)) } : null,
+      tabs: d.tabs.map((t, i) => ({ label: t.label, active: i === d.tab, el: act(() => selectApiTab(id, i)) })),
+      season: tab.kind === "episodes" && d.seasons.length > 1 ? { label: d.seasons[d.season].label, el: act(() => {}) } : null,
+      items,
+      details: items.length ? "" : text,
+      version: d.version || 0,
+      api: true,
+    };
+  }
+
+  function selectApiTab(id, i) {
+    const d = details.get(id)?.data;
+    if (!d) return;
+    d.tab = i;
+    if (d.tabs[i]?.kind === "episodes") ensureSeason(id, d.season);
+  }
+
+  function selectApiSeason(id, i) {
+    const d = details.get(id)?.data;
+    if (!d) return;
+    d.season = i;
+    ensureSeason(id, i);
+  }
+
+  /** „Meine Liste“: Disneys (unsichtbaren) Knopf auf der mitlaufenden Detailseite drücken, dann neu laden */
+  function toggleWatchlist(id) {
+    const btn = $(`${tid("add-to-watchlist-button")}, ${tid("remove-from-watchlist-button")}`);
+    if (btn) btn.click();
+    const d = details.get(id)?.data;
+    if (d) d.inWatchlist = !d.inWatchlist; // sofort zeigen
+    setTimeout(() => loadDetail(id, true), 1500);
+  }
+
   // ---------- Zustand ----------
 
   const S = {
@@ -424,7 +598,17 @@
     if (/\/enter-pin\//.test(location.pathname)) return $(tid("digit-0")) ? "pin" : "loading";
     if (/\/select-profile/.test(location.pathname)) return $("[data-testid^='profile-avatar-']") ? "profiles" : "loading";
     if (S.navTarget && Date.now() - S.navAt < 8000 && (!S.navTarget.test(location.pathname) || Date.now() - S.navAt < 900)) return "loading";
-    if (isDetail()) return $(tid("explore-details-view")) && $(tid("playback-action-button") + ", " + tid("details-page-tab")) ? "detail" : "loading";
+    if (isDetail()) {
+      const id = entityId();
+      const entry = details.get(id);
+      if (!entry || (!entry.data && !entry.busy && !entry.error)) loadDetail(id);
+      if (entry && entry.data) return "detail";
+      if (entry && entry.error && !entry.busy) {
+        // Schnittstelle versagt: wie früher die Disney-Seite auslesen
+        return $(tid("explore-details-view")) && $(tid("playback-action-button") + ", " + tid("details-page-tab")) ? "detail" : "loading";
+      }
+      return "loading";
+    }
     const ref = pageRef();
     if (ref) {
       const pg = pages.get(ref);
@@ -742,7 +926,7 @@
       dom.dButtons.push({ el: b, action });
     };
     d.actions.forEach((a, i) => addButton(i === 0 ? "play" : "restart", titleCase(a.label), () => {
-      S.playInfo = { title: d.title, sub: d.focused || "", at: Date.now() };
+      if (!d.api) S.playInfo = { title: d.title, sub: d.focused || "", at: Date.now() };
       play(a.el);
     }, i === 0));
     if (d.watch) addButton(d.watch.added ? "check" : "mylist", "Meine Liste", () => d.watch.el.click());
@@ -852,17 +1036,26 @@
   function selectTab() {
     if (dom.seasonChip && S.dTab === dom.tabs.length) return openPicker();
     const tab = S.d.tabs[S.dTab];
-    if (tab) tab.el.click(); // Inhalt kommt beim nächsten Lesen der Seite
+    if (tab) tab.el.click(); // Inhalt kommt beim nächsten Lesen der Seite bzw. aus der Schnittstelle
+    if (S.d.api) update();
     renderDetail();
   }
 
   function openItem(it) {
+    if (S.d && S.d.api) return it.el.click();
     if (it.episode) S.playInfo = { title: S.d && S.d.title, sub: it.title, at: Date.now() };
     if (it.episode) play(it.el);
     else it.el.click(); // Empfehlung: deren Detailseite öffnen
   }
 
   function openPicker() {
+    if (S.d && S.d.api) {
+      const d = details.get(S.d.key)?.data;
+      if (!d) return;
+      S.picker = { options: d.seasons.map((se, i) => ({ label: se.label, index: i })), index: d.season, api: true };
+      renderDetail();
+      return;
+    }
     const toggle = S.d.season.el;
     toggle.click(); // Disney-Menü (versteckt) öffnen, um die Staffeln auszulesen
     setTimeout(() => {
@@ -879,6 +1072,19 @@
 
   function pickerKey(key) {
     const p = S.picker;
+    if (p.api) {
+      if (key === "up") p.index = Math.max(0, p.index - 1);
+      else if (key === "down") p.index = Math.min(p.options.length - 1, p.index + 1);
+      else if (key === "back") S.picker = null;
+      else if (key === "ok") {
+        selectApiSeason(S.d.key, p.options[p.index].index);
+        S.picker = null;
+        S.dZone = "items";
+        S.dCol = 0;
+      }
+      renderDetail();
+      return;
+    }
     if (key === "up") p.index = Math.max(0, p.index - 1);
     else if (key === "down") p.index = Math.min(p.options.length - 1, p.index + 1);
     else if (key === "back") {
@@ -1269,7 +1475,7 @@
     // Seiten aus der Schnittstelle (Startseite, Filme, Serien …): die Disney-Seite wird dafür nicht gebraucht und
     // schläft (nicht zeichnen, nicht berechnen). Wach bleibt sie nur für Detailseiten, Profile, PIN und Player.
     const wasAsleep = S.asleep;
-    S.asleep = view === "home" && !!pageRef();
+    S.asleep = (view === "home" && !!pageRef()) || (view === "detail" && !!(details.get(entityId()) || {}).data);
     document.documentElement.classList.toggle("dp-asleep", S.asleep);
     if (S.asleep !== wasAsleep) bridge("hidden", { on: S.asleep }).catch(() => {}); // Disneys Zeitgeber anhalten
     pauseHiddenAnimations(S.asleep);
@@ -1307,8 +1513,8 @@
       S.view = "home";
       renderHome();
     } else if (view === "detail") {
-      const data = readDetail();
-      const sig = JSON.stringify([data.key, data.bg, data.focused, data.season && data.season.label, data.tabs.map((t) => t.active), data.items.map((i) => i.href), data.watch && data.watch.added, data.actions.map((a) => a.label)]);
+      const data = apiDetailView() || readDetail();
+      const sig = JSON.stringify([data.key, data.bg, data.focused, data.season && data.season.label, data.tabs.map((t) => t.active), data.items.map((i) => i.href), data.watch && data.watch.added, data.actions.map((a) => a.label), data.version]);
       if (S.view !== "detail" || sig !== S.dSig) {
         if (S.view !== "detail" || (S.d && S.d.key !== data.key)) {
           S.dZone = "buttons";
