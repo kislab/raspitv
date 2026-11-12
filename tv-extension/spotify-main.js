@@ -28,7 +28,6 @@
   let lastCommand = null;   // letzter Wiedergabe-Befehl des Web-Players (Adresse + Inhalt, ohne Schlüssel)
   let spclient = null;      // Wiedergabe-Server
   let deviceId = null;      // dieses Web-Player-Gerät
-  const seen = [];
   function rememberGql(url, body) {
     try {
       if (!/pathfinder/.test(url)) return;
@@ -61,7 +60,7 @@
         }
         // Gerät dieses Web-Players und Wiedergabe-Server (z. B. https://gew4-spclient.spotify.com)
         const dev = url.match(/^(https:\/\/[^/]+)\/connect-state\/v1\/(?:devices\/hobs_|player\/command\/from\/)([0-9a-f]{20,})/);
-        if (dev) { spclient = dev[1]; deviceId = dev[2]; seen.push(url.replace(/^https:\/\/[^/]+/, "").slice(0, 120)); }
+        if (dev) { spclient = dev[1]; deviceId = dev[2]; }
       }
     } catch (e) { /* nie die Seite stören */ }
     return origFetch.apply(this, arguments);
@@ -118,7 +117,6 @@
     ready: async () => ({ ready: !!auth, player: !!(spclient && deviceId), gql: Object.keys(gqlOps) }),
     gql: ({ name, variables }) => gql(name, { ...(gqlOps[name]?.vars || {}), ...(variables || {}) }),
     template: ({ name }) => gqlOps[name]?.vars || null,
-    debug: () => ({ spclient, deviceId, seen, command: lastCommand && lastCommand.url.replace(/^https:\/\/[^/]+/, "") }),
     // Abspielen wie der Web-Player selbst: „play“-Befehl an dieses Gerät. context = Playlist/Album/…-URI,
     // trackUri/index = ab diesem Titel.
     async play({ context, trackUri, index }) {
