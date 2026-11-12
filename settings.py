@@ -452,21 +452,27 @@ def set_display_mode(output, mode):
 
 def mode_for_rate(fps):
     """Modus in der aktuellen Auflösung, dessen Bildrate ein ganzes Vielfaches der Video-Bildrate ist
-    (25 → 50 Hz, 24 → 24 Hz, 29,97 → 59,94 Hz), möglichst hoch bis 60 Hz. (Ausgang, Modus) oder None."""
+    (25 → 50 Hz, 24 → 24 Hz, 29,97 → 59,94 Hz), möglichst hoch bis 60 Hz – gibt es das nicht, bis 120 Hz
+    (24 → 120 Hz auf Monitoren ohne 24 Hz). (Ausgang, Modus) oder None."""
     out = next((o for o in _outputs() if o.get("enabled")), None)
     cur = out and next((m for m in out.get("modes", []) if m.get("current")), None)
     if not cur or fps <= 0:
         return None
     fits = []
     for m in out["modes"]:
-        if (m["width"], m["height"]) != (cur["width"], cur["height"]) or m["refresh"] > 60.5:
+        if (m["width"], m["height"]) != (cur["width"], cur["height"]) or m["refresh"] > 120.5:
             continue
         k = round(m["refresh"] / fps)
         if k >= 1 and abs(m["refresh"] - k * fps) / m["refresh"] < 0.0005:
             fits.append(m)
     if not fits:
         return None
-    best = max(fits, key=lambda m: m["refresh"])
+    # bis 60 Hz bevorzugt (die höchste); sonst die niedrigste darüber (Monitore ohne 24 Hz: 24 fps → 120 Hz)
+    def err(m):
+        return round(abs(m["refresh"] - round(m["refresh"] / fps) * fps) / m["refresh"], 5)
+    low = [m for m in fits if m["refresh"] <= 60.5]
+    best = (min(low, key=lambda m: (err(m), -m["refresh"])) if low
+            else min(fits, key=lambda m: (err(m), m["refresh"])))
     return out["name"], f"{best['width']}x{best['height']}@{best['refresh']:f}"
 
 

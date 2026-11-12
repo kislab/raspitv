@@ -233,6 +233,158 @@
     };
   }
 
+
+  // ---------- Daten aus Disneys Schnittstelle (über disney-bridge.js im Seiten-Kontext) ----------
+  // Startseite, Filme, Serien, Originals und Meine Liste kommen direkt aus der Schnittstelle, die auch die
+  // Disney-Seite benutzt (deeplink → page → set). Die Disney-Seite muss dafür nichts zeichnen und wird nicht
+  // mehr zum Nachladen gescrollt – sie schläft (content-visibility: hidden).
+  const EXPLORE = "https://disney.api.edge.bamgrid.com/explore/v1.21/";
+  let bridgeSeq = 0;
+  const bridgeWait = new Map();
+  window.addEventListener("message", (e) => {
+    if (e.source !== window || e.data?.tvdp !== "res") return;
+    const w = bridgeWait.get(e.data.id);
+    if (!w) return;
+    bridgeWait.delete(e.data.id);
+    if (e.data.ok) w.resolve(e.data.data); else w.reject(new Error(e.data.error));
+  });
+  function bridge(op, args) {
+    return new Promise((resolve, reject) => {
+      const id = ++bridgeSeq;
+      bridgeWait.set(id, { resolve, reject });
+      window.postMessage({ tvdp: "req", id, op, args }, "*");
+      setTimeout(() => { if (bridgeWait.delete(id)) reject(new Error("Zeitüberschreitung")); }, 20000);
+    });
+  }
+  const explore = (path) => bridge("get", { url: EXPLORE + path });
+  /** Seitenwechsel über Disneys eigenen Router (ohne Neuladen) */
+  const go = (path) => bridge("navigate", { path }).catch(() => (location.href = path));
+
+  const imageUrl = (id, width) =>
+    id ? `https://disney.images.edge.bamgrid.com/ripcut-delivery/v2/variant/disney/${id}/compose?format=webp&width=${width}` : "";
+  const artId = (art, kind, ...ratios) => {
+    const set = art?.standard?.[kind] || {};
+    for (const r of ratios) if (set[r]?.imageId) return set[r].imageId;
+    const any = Object.values(set)[0];
+    return any?.imageId || "";
+  };
+  function metaOf(v) {
+    const m = v?.metastringParts || {};
+    const years = m.releaseYearRange ? [m.releaseYearRange.startYear, m.releaseYearRange.endYear].filter(Boolean).join("–") : "";
+    return [m.ratingInfo?.rating?.text && `ab ${m.ratingInfo.rating.text}`, years, m.genres?.values?.[0]].filter(Boolean).join("  •  ");
+  }
+  const TALL = /poster|vertical/;
+  /** Eintrag der Schnittstelle → Karte (wie bisher cardData) */
+  function apiCard(item, style) {
+    const v = item.visuals || {};
+    const action = (item.actions || []).find((a) => a.pageId || a.deeplinkId) || {};
+    const tall = TALL.test(style || "");
+    const playable = action.type === "playback";
+    const pct = item.personalization?.userState?.progress?.progressPercentage;
+    return {
+      href: playable ? `/play/${action.deeplinkId}` : action.pageId ? `/browse/${action.pageId}` : "",
+      id: item.id,
+      label: v.title || action.visuals?.title || "",
+      sub: v.episodeTitle || "",
+      meta: metaOf(v),
+      img: tall ? imageUrl(artId(v.artwork, "tile", "0.71", "0.67", "0.75"), 400)
+        : imageUrl(artId(v.artwork, "tile", "1.78") || artId(v.artwork, "thumbnail", "1.78"), 400),
+      art: "", // Disneys Kacheln enthalten den Titel-Schriftzug schon
+      tall,
+      progress: pct != null ? pct / 100 : null,
+    };
+  }
+  function apiSlide(item) {
+    const v = item.visuals || {};
+    const action = (item.actions || []).find((a) => a.pageId) || {};
+    return {
+      href: action.pageId ? `/browse/${action.pageId}` : "",
+      bg: imageUrl(artId(v.artwork, "background", "1.78") || artId(v.artwork, "hero", "1.78"), 1920),
+      logo: imageUrl(artId(v.artwork, "title_treatment", "3.32", "1.78"), 900),
+      title: v.title || "",
+      prompt: v.promoLabel?.header || v.description?.brief || "",
+      rating: v.metastringParts?.ratingInfo?.rating?.text || "",
+      meta: metaOf(v).replace(/^ab \d+\s+•\s+/, ""),
+    };
+  }
+
+  /** Disney-Adresse → Kennung der Seite in der Schnittstelle (home, movies, series, originals, watchlist) */
+  function pageRef() {
+    const m = location.pathname.match(/\/browse\/([a-z]+)$/);
+    if (m && m[1] !== "search") return m[1];
+    return /\/home$/.test(location.pathname) ? "home" : null;
+  }
+
+  const pages = new Map(); // Kennung → { slides, rows, sets: [{style, title, id, loaded}], ready, busy }
+  async function loadPage(ref) {
+    if (pages.has(ref)) return pages.get(ref);
+    const pg = { slides: [], rows: [], sets: [], ready: false, error: "" };
+    pages.set(ref, pg);
+    try {
+      const dl = await explore(`deeplink?refId=${ref}&refIdType=deeplinkId`);
+      const pageId = JSON.stringify(dl).match(/page-[0-9a-f-]{36}/)?.[0];
+      if (!pageId) throw new Error("Seite nicht gefunden");
+      pg.pageId = pageId.replace(/^page-/, "");
+      const data = await explore(`page/${pageId}?disableSmartFocus=true&enhancedContainersLimit=4&limit=20`);
+      for (const c of data?.data?.page?.containers || []) {
+        const style = c.style?.name || "";
+        if (/hero/.test(style)) {
+          pg.slides = (c.items || []).map(apiSlide).filter((x) => x.bg && x.href);
+          if (!pg.slides.length) pg.heroSet = c.id; // kurz nach dem Start oft noch leer: gleich nachladen
+          continue;
+        }
+        if (c.type !== "set") continue;
+        const set = { id: c.id, style, title: c.visuals?.name || "", loaded: !!c.items?.length };
+        pg.sets.push(set);
+        if (set.loaded) pg.rows.push({ title: set.title, cards: c.items.map((it) => apiCard(it, style)).filter((x) => x.img) });
+      }
+      pg.ready = true;
+      loadMoreRows(ref, 6);
+    } catch (error) {
+      // Gleich nach dem Start hat die Brücke oft noch keinen Zugang: kurz warten und neu versuchen
+      pg.error = error.message;
+      const tries = (retries.get(ref) || 0) + 1;
+      retries.set(ref, tries);
+      if (tries < 15) setTimeout(() => pages.get(ref) === pg && pages.delete(ref), 1500);
+      else pg.ready = true; // aufgeben: Disney-Seite selbst zeigen
+    }
+    return pg;
+  }
+  const retries = new Map();
+
+  /** Weitere Reihen laden (Disney liefert anfangs nur die ersten mit Karten) – in Seitenreihenfolge. */
+  async function loadMoreRows(ref, count) {
+    const pg = pages.get(ref);
+    if (!pg || pg.busy) return;
+    pg.busy = true;
+    try {
+      if (pg.heroSet && !pg.slides.length) {
+        for (let attempt = 0; attempt < 5 && !pg.slides.length; attempt++) {
+          if (attempt) await new Promise((r) => setTimeout(r, 2000));
+          const data = await explore(`set/${pg.heroSet}?limit=20&pageId=${pg.pageId}`).catch(() => null);
+          pg.slides = (data?.data?.set?.items || []).map(apiSlide).filter((x) => x.bg && x.href);
+        }
+      }
+      let added = 0;
+      for (const set of pg.sets) {
+        if (added >= count) break;
+        if (set.loaded) continue;
+        set.loaded = true;
+        try {
+          const data = await explore(`set/${set.id}?limit=20&pageId=${pg.pageId}`);
+          const items = data?.data?.set?.items || [];
+          const cards = items.map((it) => apiCard(it, set.style)).filter((x) => x.img);
+          if (cards.length) {
+            pg.rows.push({ title: set.title || data?.data?.set?.visuals?.name || "", cards });
+            added++;
+          }
+        } catch (e) { /* Reihe auslassen */ }
+      }
+    } finally {
+      pg.busy = false;
+    }
+  }
+
   // ---------- Zustand ----------
 
   const S = {
@@ -256,6 +408,8 @@
     navTarget: null,
   };
   TV.disney = S; // Zustand für Tests (dev/cdp.py --ext 'TV.disney')
+  TV.disneyPages = pages; // geladene Seiten aus der Schnittstelle (für Tests)
+  TV.disneyApi = { apiSlide, apiCard, explore };
 
   const root = h("div");
   root.id = "nftv";
@@ -268,6 +422,13 @@
     if (/\/select-profile/.test(location.pathname)) return $("[data-testid^='profile-avatar-']") ? "profiles" : "loading";
     if (S.navTarget && Date.now() - S.navAt < 8000 && (!S.navTarget.test(location.pathname) || Date.now() - S.navAt < 900)) return "loading";
     if (isDetail()) return $(tid("explore-details-view")) && $(tid("playback-action-button") + ", " + tid("details-page-tab")) ? "detail" : "loading";
+    const ref = pageRef();
+    if (ref) {
+      const pg = pages.get(ref);
+      if (!pg) loadPage(ref);
+      if (pg && pg.ready && (pg.rows.length || pg.slides.length)) return "home";
+      return pg && pg.ready && pg.error ? null : "loading";
+    }
     if (/\/(home|browse)/.test(location.pathname)) {
       if ($(tid("hero-carousel-shelf-item") + ", " + tid("set-item"))) return "home";
       if (/\/browse\/search/.test(location.pathname)) return null; // leere Suche: Eingabe über die Tastatur
@@ -489,7 +650,7 @@
         else if (slides.length) S.zone = "hero";
       } else if (key === "down") {
         if (S.row < rows.length - 1) S.row++;
-        if (S.row >= rows.length - 3) window.scrollTo(0, document.documentElement.scrollHeight); // weitere Reihen laden
+        if (S.row >= rows.length - 3) loadMoreRows(pageRef(), 4); // weitere Reihen aus der Schnittstelle
       } else if (key === "back") {
         if (slides.length) (S.zone = "hero"), (S.row = 0);
         else TV.home();
@@ -538,9 +699,9 @@
   function openCard(card, from) {
     if (!card || !card.href) return;
     S.returnZone = from;
-    const el = $$("a[href]").find((a) => a.getAttribute("href") === card.href);
-    if (el) el.click();
-    else location.href = card.href;
+    S.navAt = Date.now();
+    S.navTarget = /\/play\//.test(card.href) ? /\/play\// : /\/browse\/entity-/;
+    go(card.href); // Disneys Router, ohne Neuladen
   }
 
   // ---------- Detailseite ----------
@@ -957,6 +1118,27 @@
     root.append(page);
   }
 
+  // Per Skript gestartete Animationen der Disney-Seite (Web Animations, z. B. Lade-Platzhalter) laufen trotz
+  // content-visibility weiter und erzwingen 60 Bilder/s. Im Schlaf anhalten, beim Aufwachen fortsetzen.
+  const pausedAnims = new Set();
+  let animCheckAt = 0;
+  function pauseHiddenAnimations(asleep) {
+    if (!asleep) {
+      for (const a of pausedAnims) { try { a.play(); } catch (e) { /* schon entfernt */ } }
+      pausedAnims.clear();
+      return;
+    }
+    if (Date.now() - animCheckAt < 2000) return;
+    animCheckAt = Date.now();
+    for (const a of document.getAnimations()) {
+      const t = a.effect && a.effect.target;
+      if (a.playState === "running" && t && document.body.contains(t)) {
+        a.pause();
+        pausedAnims.add(a);
+      }
+    }
+  }
+
   function update() {
     const view = computeView();
     document.documentElement.classList.toggle("nftv-on", !!view);
@@ -973,24 +1155,17 @@
     // nicht mehr auslesen). Sonst rechnet sie bei jedem Bild ihre ~700 Sichtbarkeits-Beobachter
     // durch und die Navigation ruckelt. Nach dem Zurückkommen von anderen Seiten (Detail, Player)
     // bleibt sie 5 s wach, damit z. B. "Weiterschauen" aktuell eingelesen wird.
-    if (view !== "home") S.wakeAt = Date.now();
-    S.asleep = view === "home" && S.view === "home" && S.preloadDone && cachePath === location.pathname &&
-      Date.now() - (S.wakeAt || 0) > 5000;
+    // Seiten aus der Schnittstelle (Startseite, Filme, Serien …): die Disney-Seite wird dafür nicht gebraucht und
+    // schläft (nicht zeichnen, nicht berechnen). Wach bleibt sie nur für Detailseiten, Profile, PIN und Player.
+    const wasAsleep = S.asleep;
+    S.asleep = view === "home" && !!pageRef();
     document.documentElement.classList.toggle("dp-asleep", S.asleep);
-    if (S.asleep) return;
+    if (S.asleep !== wasAsleep) bridge("hidden", { on: S.asleep }).catch(() => {}); // Disneys Zeitgeber anhalten
+    pauseHiddenAnimations(S.asleep);
 
     if (view === "home") {
-      if (cachePath !== location.pathname) {
-        // neue Seite: gemerkte Reihen verwerfen und von oben nachladen
-        rowCache.clear();
-        slideCache.clear();
-        cachePath = location.pathname;
-        S.preloadDone = false;
-        S.preloadIdle = 0;
-        S.preloadSteps = 0;
-      }
-      preload();
-      const data = readHome();
+      const pg = pages.get(pageRef());
+      const data = pg ? { slides: pg.slides, rows: pg.rows.slice() } : readHome();
       // Neu aufbauen nur bei anderer Seite oder anderem Banner. Nachgeladene Reihen und Karten
       // werden angehängt, damit Bilder und Auswahl stehen bleiben.
       const sig = JSON.stringify([location.pathname, data.slides.map((s) => s.href)]);
