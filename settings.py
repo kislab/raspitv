@@ -25,6 +25,7 @@ DEFAULTS = {
     "jellyfin_user_id": "",
     "jellyfin_user": "",
     "jellyfin_device": "",   # Geräte-ID von RaspiTV gegenüber Jellyfin
+    "display_mode": "",      # gewählte Auflösung des Bildschirms, z. B. "1920x1080@60" ("" = wie der Fernseher will)
     "audio_auto": True,      # neue Bluetooth-/USB-Audiogeräte automatisch verwenden
     "audio_output": "",      # zuletzt selbst gewählter Ausgang (node.name) – zurück dorthin, wenn ein Gerät geht
     "saver_min": 10,         # Bildschirmschoner nach so vielen Minuten ohne Tastendruck (0 = aus)
@@ -347,6 +348,120 @@ def screen_power(on):
         return ok
     except (OSError, ValueError, subprocess.SubprocessError):
         return False
+
+
+# ---------- Auflösung ----------
+
+RESOLUTION_NAMES = {(4096, 2160): "4K", (3840, 2160): "4K", (2560, 1440): "QHD", (1920, 1080): "Full HD",
+                    (1280, 720): "HD"}
+
+
+def _outputs():
+    try:
+        return json.loads(subprocess.run(["wlr-randr", "--json"], capture_output=True, text=True, timeout=5).stdout or "[]")
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return []
+
+
+def pi_model():
+    """Modell, z. B. "Raspberry Pi 4 Model B Rev 1.5" ("" außerhalb eines Pi)."""
+    try:
+        return Path("/proc/device-tree/model").read_text(errors="replace").strip("\x00 \n")
+    except OSError:
+        return ""
+
+
+def _pi_generation(model):
+    import re
+    m = re.search(r"Raspberry Pi (\d+)", model)
+    return int(m.group(1)) if m else (0 if "Zero" in model else None)
+
+
+def rate_mode(width, height, refresh, model):
+    """Wie gut läuft RaspiTV in dieser Auflösung auf diesem Pi? ("empfohlen" | "gut" | "langsam", Hinweis)
+
+    Pi 4: Oberfläche und Webseiten werden auf der Grafikeinheit gezeichnet – bei 4K sind das 4× so viele
+    Bildpunkte, und der Fernseher bietet 4K meist nur mit 30 Hz an (Bewegungen ruckeln). Full HD mit 60 Hz
+    ist der beste Kompromiss; Netflix & Co. liefern im Browser ohnehin höchstens Full HD.
+    """
+    gen = _pi_generation(model)
+    pixels = width * height
+    if gen is None:  # kein Pi erkannt: nur nach Bildrate
+        return ("gut", "") if refresh > 45 else ("langsam", "ruckelt (unter 50 Hz)")
+    if gen >= 5:
+        if pixels <= 1920 * 1080 and refresh > 45:
+            return "empfohlen", "flüssig"
+        if pixels <= 2560 * 1440 and refresh > 45:
+            return "gut", "scharf, etwas langsamer"
+        return ("gut", "scharf, braucht mehr Leistung") if refresh > 45 else ("langsam", "nur 30 Hz – Bewegungen ruckeln")
+    if gen == 4:
+        if pixels <= 1280 * 720:
+            return "gut", "sehr flüssig, weniger scharf"
+        if pixels <= 1920 * 1080 and refresh > 45:
+            return "empfohlen", "beste Wahl für den Pi 4"
+        if pixels <= 2560 * 1440 and refresh > 45:
+            return "langsam", "Pi 4 kommt kaum mit"
+        return "langsam", "ruckelt auf dem Pi 4" + (" (nur 30 Hz)" if refresh <= 45 else "")
+    # Pi 3, Zero und älter
+    if pixels <= 1280 * 720:
+        return "empfohlen", "beste Wahl für diesen Pi"
+    if pixels <= 1920 * 1080:
+        return "langsam", "zu viel für diesen Pi"
+    return "langsam", "zu viel für diesen Pi"
+
+
+def display_modes():
+    """Auflösungen des eingeschalteten Bildschirms (ab 720p), je mit der besten Bildrate bis 60 Hz:
+    [{"output", "mode" ("1920x1080@60.000000"), "label", "current"}], größte zuerst."""
+    out = next((o for o in _outputs() if o.get("enabled")), None)
+    if not out:
+        return []
+    current = next((m for m in out.get("modes", []) if m.get("current")), None)
+    model = pi_model()
+    best = {}
+    for m in out.get("modes", []):
+        w, h, r = m["width"], m["height"], m["refresh"]
+        if h < 720 or w < h * 1.5:   # nur Breitbild (kein 4:3, 5:4)
+            continue
+        score = (r <= 60.5, round(r) in (60, 50), r)   # bis 60 Hz, 60/50 Hz bevorzugt, dann höchste
+        if (w, h) not in best or score > best[(w, h)][0]:
+            best[(w, h)] = (score, m)
+    modes = []
+    for (w, h), (_, m) in sorted(best.items(), key=lambda kv: kv[0][0] * kv[0][1], reverse=True):
+        name = RESOLUTION_NAMES.get((w, h))
+        cur = bool(current) and current["width"] == w and current["height"] == h
+        rate = (current if cur else m)["refresh"]
+        verdict, note = rate_mode(w, h, rate, model)
+        modes.append({"output": out["name"], "mode": f"{w}x{h}@{m['refresh']:f}", "current": cur,
+                      "label": f"{name} · {w} × {h}" if name else f"{w} × {h}",
+                      "rate": f"{rate:.0f} Hz", "verdict": verdict, "note": note})
+    return modes
+
+
+def current_display_mode():
+    out = next((o for o in _outputs() if o.get("enabled")), None)
+    m = out and next((m for m in out.get("modes", []) if m.get("current")), None)
+    return (out["name"], f"{m['width']}x{m['height']}@{m['refresh']:f}") if m else (None, "")
+
+
+def set_display_mode(output, mode):
+    """Auflösung umschalten (wlr-randr); True, wenn es geklappt hat."""
+    try:
+        return subprocess.run(["wlr-randr", "--output", output, "--mode", mode], timeout=10).returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
+def apply_display_mode(wanted):
+    """Beim Start: gespeicherte Auflösung setzen, falls der Bildschirm sie kann und sie nicht schon aktiv ist."""
+    if not wanted:
+        return False
+    w, h = wanted.split("@")[0].split("x")
+    output, now = current_display_mode()
+    if not output or now.split("@")[0] == f"{w}x{h}":
+        return False
+    mode = next((m for m in display_modes() if m["mode"].split("@")[0] == f"{w}x{h}"), None)
+    return bool(mode) and set_display_mode(output, mode["mode"])
 
 
 def _git(*args, timeout=30):

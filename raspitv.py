@@ -118,6 +118,8 @@ class Home(AccountsUI, JellyfinUI, QObject):
         self.ticks = 0
         self.volume = None
         self.outputs = []  # Audio-Ausgänge (für Einstellungen → Ton)
+        self.modes = []    # Auflösungen des Bildschirms (für Einstellungen → Darstellung)
+        self.mode_pending = None  # gerade umgeschaltet, Antwort auf „Bild in Ordnung?“ steht aus
         self.vol = {"value": 0, "muted": False, "seq": 0}  # Lautstärke-Anzeige (seq zählt Tastendrücke)
         self.last_input = time.monotonic()  # letzter Tastendruck (Bildschirmschoner, Bildschirm aus)
         self.saver = None              # None | "clock" (Bildschirmschoner) | "off" (Bildschirm aus)
@@ -758,6 +760,7 @@ class Home(AccountsUI, JellyfinUI, QObject):
         self.view = "settings"
         self.volume = cfg.get_volume()
         self.outputs = cfg.audio_outputs()
+        self.modes = cfg.display_modes()
         self.build_items()
         self.pane, self.cat = "cats", 0
         self.select_cat(0)
@@ -766,6 +769,54 @@ class Home(AccountsUI, JellyfinUI, QObject):
         self.view = "home"
 
     # ---------- Audio-Ausgang ----------
+
+    # ---------- Auflösung ----------
+
+    def choose_mode(self, mode):
+        """Auflösung umschalten. Danach „Bild in Ordnung?“ – ohne Antwort nach 15 s zurück (falls der
+        Fernseher die Auflösung nicht zeigt, sieht man die Frage ja nicht)."""
+        if mode["current"]:
+            return
+        before = cfg.current_display_mode()
+
+        def work():
+            return cfg.set_display_mode(mode["output"], mode["mode"])
+
+        def done(ok):
+            self.refresh_modes()
+            if not ok:
+                self.notice("Diese Auflösung ging nicht")
+                return
+            token = object()
+            self.mode_pending = token
+
+            def keep():
+                self.mode_pending = None
+                self.set("display_mode", mode["mode"])
+                self.close_dialog()
+
+            def revert():
+                if self.mode_pending is not token:
+                    return
+                self.mode_pending = None
+                self.busy("Stelle die vorige Auflösung wieder her …")
+                self.run_bg(lambda: before[0] and cfg.set_display_mode(*before), lambda _: (self.refresh_modes(), self.close_dialog()))
+
+            self.dialog = {"text": "Bild in Ordnung?", "sub": "Ohne Antwort geht es in 15 Sekunden zurück",
+                           "buttons": [("Behalten", keep), ("Zurück", revert)], "index": 0}
+            QTimer.singleShot(15000, revert)
+        self.busy(f"Stelle {mode['label']} ein …")
+        self.run_bg(work, done)
+
+    def refresh_modes(self):
+        self.modes = cfg.display_modes()
+        if self.view != "settings" or self.sub:
+            return
+        label = self.items[self.item]["label"] if self.items else None
+        self.build_items()
+        self.items = self.cats[self.cat]["items"]
+        self.item = next((i for i, it in enumerate(self.items) if it["label"] == label and it["kind"] in FOCUSABLE),
+                         min(self.item, len(self.items) - 1))
 
     def choose_output(self, out):
         """Ausgang in den Einstellungen gewählt: umschalten, merken, Testton, Lautstärke des Ausgangs zeigen."""
@@ -871,20 +922,37 @@ class Home(AccountsUI, JellyfinUI, QObject):
                           "change": lambda step: self.set("audio_auto", not s["audio_auto"])})
             sound.append({"kind": "action", "label": "Testton abspielen", "hint": "", "run": cfg.play_test_sound})
 
+        display = []
+        if getattr(self, "modes", None):
+            display.append({"kind": "header", "label": "Auflösung"})
+            model = cfg.pi_model()
+            best = next((m for m in self.modes if m["verdict"] == "empfohlen"), None)
+            if model:
+                short = model.split(" Rev ")[0]
+                display.append({"kind": "info", "label": short + " erkannt",
+                                "value": f"Empfohlen: {best['label'].split(' · ')[0]} ({best['rate']})" if best else ""})
+            for mode in self.modes:
+                note = {"empfohlen": "★ Empfohlen", "gut": "", "langsam": "⚠ " + mode["note"]}[mode["verdict"]]
+                if mode["verdict"] == "gut":
+                    note = mode["note"]
+                parts = [p for p in (("✓ Aktiv" if mode["current"] else ""), note, mode["rate"]) if p]
+                display.append({"kind": "action", "label": mode["label"], "hint": "  ·  ".join(parts),
+                                "run": lambda mode=mode: self.choose_mode(mode)})
+
         self.cats = [
             {"label": "Konto", "icon": "account", "desc": "Wer gerade schaut und eigene Logins",
              "items": [
                  {"kind": "info", "label": "Aktives Konto", "value": self.account["name"]},
                  {"kind": "action", "label": "Konto wechseln", "run": self.open_profiles},
              ]},
-            {"label": "Darstellung", "icon": "display", "desc": "Aussehen der Startseite",
+            {"label": "Darstellung", "icon": "display", "desc": "Aussehen der Startseite und Auflösung",
              "items": [
                  {"kind": "choice", "label": "Kachelgröße", "value": lambda: s["tile_size"].capitalize(), "change": cycle_size},
                  {"kind": "choice", "label": "Uhrzeit", "value": lambda: "24 Stunden" if s["clock_24h"] else "12 Stunden",
                   "change": lambda step: self.set("clock_24h", not s["clock_24h"])},
                  {"kind": "toggle", "label": "Animationen", "value": lambda: s["animations"],
                   "change": lambda step: self.set("animations", not s["animations"])},
-             ]},
+             ] + display},
             {"label": "Apps", "icon": "apps", "desc": "Installierte Apps löschen – neue gibt es unter „Verfügbare Apps“",
              "items": apps},
             {"label": "Ton", "icon": "sound", "desc": "Lautstärke und Ausgang: HDMI, Klinke, Bluetooth", "items": sound},
@@ -1249,6 +1317,8 @@ def main():
         sys.exit("RaspiTV läuft bereits (Port 8765 ist belegt).")
     # Bluetooth-Fernbedienungen direkt lesen (auch während der Player vorne liegt)
     home.set_remotes(network.bt_remotes())
+    # gewählte Auflösung setzen (z. B. Full HD statt 4K mit 30 Hz, das der Fernseher von sich aus nimmt)
+    threading.Thread(target=cfg.apply_display_mode, args=(home.settings["display_mode"],), daemon=True).start()
     home.remote_input = remote_input.RemoteInput(remote.press, home.remote_extra, lambda: home.remote_macs,
                                                    lambda: home.bgDone.emit(home.remote_connected))
     # Kopplungsanfragen beantwortet RaspiTV selbst – kein Desktop-Fenster über der Oberfläche
