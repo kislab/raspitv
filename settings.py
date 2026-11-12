@@ -25,7 +25,8 @@ DEFAULTS = {
     "jellyfin_user_id": "",
     "jellyfin_user": "",
     "jellyfin_device": "",   # Geräte-ID von RaspiTV gegenüber Jellyfin
-    "display_mode": "",      # gewählte Auflösung des Bildschirms, z. B. "1920x1080@60" ("" = wie der Fernseher will)
+    "display_mode": "",
+    "match_rate": True,      # Bildrate des Fernsehers während eines Videos anpassen (25 fps → 50 Hz …)      # gewählte Auflösung des Bildschirms, z. B. "1920x1080@60" ("" = wie der Fernseher will)
     "audio_auto": True,      # neue Bluetooth-/USB-Audiogeräte automatisch verwenden
     "audio_output": "",      # zuletzt selbst gewählter Ausgang (node.name) – zurück dorthin, wenn ein Gerät geht
     "saver_min": 10,         # Bildschirmschoner nach so vielen Minuten ohne Tastendruck (0 = aus)
@@ -352,7 +353,8 @@ def screen_power(on):
 
 # ---------- Auflösung ----------
 
-RESOLUTION_NAMES = {(4096, 2160): "4K", (3840, 2160): "4K", (2560, 1440): "QHD", (1920, 1080): "Full HD",
+# Nur diese Stufen werden angeboten (Reihenfolge: bevorzugte zuerst; bei 4K die Fernseh-Norm 3840 × 2160)
+RESOLUTION_NAMES = {(3840, 2160): "4K", (4096, 2160): "4K", (2560, 1440): "QHD", (1920, 1080): "Full HD",
                     (1280, 720): "HD"}
 
 
@@ -378,7 +380,7 @@ def _pi_generation(model):
 
 
 def rate_mode(width, height, refresh, model):
-    """Wie gut läuft RaspiTV in dieser Auflösung auf diesem Pi? ("empfohlen" | "gut" | "langsam", Hinweis)
+    """Wie gut läuft RaspiTV in dieser Auflösung auf diesem Pi? ("empfohlen" | "gut" | "langsam", kurzes Wort)
 
     Pi 4: Oberfläche und Webseiten werden auf der Grafikeinheit gezeichnet – bei 4K sind das 4× so viele
     Bildpunkte, und der Fernseher bietet 4K meist nur mit 30 Hz an (Bewegungen ruckeln). Full HD mit 60 Hz
@@ -386,28 +388,21 @@ def rate_mode(width, height, refresh, model):
     """
     gen = _pi_generation(model)
     pixels = width * height
+    slow = refresh <= 45
     if gen is None:  # kein Pi erkannt: nur nach Bildrate
-        return ("gut", "") if refresh > 45 else ("langsam", "ruckelt (unter 50 Hz)")
+        return ("langsam", "Ruckelt") if slow else ("gut", "")
     if gen >= 5:
-        if pixels <= 1920 * 1080 and refresh > 45:
-            return "empfohlen", "flüssig"
-        if pixels <= 2560 * 1440 and refresh > 45:
-            return "gut", "scharf, etwas langsamer"
-        return ("gut", "scharf, braucht mehr Leistung") if refresh > 45 else ("langsam", "nur 30 Hz – Bewegungen ruckeln")
+        if slow:
+            return "langsam", "Ruckelt"
+        return ("empfohlen", "Empfohlen") if pixels <= 1920 * 1080 else ("gut", "")
     if gen == 4:
         if pixels <= 1280 * 720:
-            return "gut", "sehr flüssig, weniger scharf"
-        if pixels <= 1920 * 1080 and refresh > 45:
-            return "empfohlen", "beste Wahl für den Pi 4"
-        if pixels <= 2560 * 1440 and refresh > 45:
-            return "langsam", "Pi 4 kommt kaum mit"
-        return "langsam", "ruckelt auf dem Pi 4" + (" (nur 30 Hz)" if refresh <= 45 else "")
+            return "gut", "Weniger scharf"
+        if pixels <= 1920 * 1080 and not slow:
+            return "empfohlen", "Empfohlen"
+        return "langsam", "Ruckelt"
     # Pi 3, Zero und älter
-    if pixels <= 1280 * 720:
-        return "empfohlen", "beste Wahl für diesen Pi"
-    if pixels <= 1920 * 1080:
-        return "langsam", "zu viel für diesen Pi"
-    return "langsam", "zu viel für diesen Pi"
+    return ("empfohlen", "Empfohlen") if pixels <= 1280 * 720 else ("langsam", "Ruckelt")
 
 
 def display_modes():
@@ -426,15 +421,18 @@ def display_modes():
         score = (r <= 60.5, round(r) in (60, 50), r)   # bis 60 Hz, 60/50 Hz bevorzugt, dann höchste
         if (w, h) not in best or score > best[(w, h)][0]:
             best[(w, h)] = (score, m)
-    modes = []
-    for (w, h), (_, m) in sorted(best.items(), key=lambda kv: kv[0][0] * kv[0][1], reverse=True):
-        name = RESOLUTION_NAMES.get((w, h))
-        cur = bool(current) and current["width"] == w and current["height"] == h
-        rate = (current if cur else m)["refresh"]
+    modes, names = [], set()
+    for (w, h), name in RESOLUTION_NAMES.items():
+        if (w, h) not in best or name in names:
+            continue
+        names.add(name)
+        m = best[(w, h)][1]
+        cur = bool(current) and any(current["width"] == cw and current["height"] == ch
+                                    for (cw, ch), n in RESOLUTION_NAMES.items() if n == name)
+        rate = current["refresh"] if cur else m["refresh"]
         verdict, note = rate_mode(w, h, rate, model)
         modes.append({"output": out["name"], "mode": f"{w}x{h}@{m['refresh']:f}", "current": cur,
-                      "label": f"{name} · {w} × {h}" if name else f"{w} × {h}",
-                      "rate": f"{rate:.0f} Hz", "verdict": verdict, "note": note})
+                      "label": name, "rate": f"{rate:.0f} Hz", "verdict": verdict, "note": note})
     return modes
 
 
@@ -450,6 +448,26 @@ def set_display_mode(output, mode):
         return subprocess.run(["wlr-randr", "--output", output, "--mode", mode], timeout=10).returncode == 0
     except (OSError, subprocess.SubprocessError):
         return False
+
+
+def mode_for_rate(fps):
+    """Modus in der aktuellen Auflösung, dessen Bildrate ein ganzes Vielfaches der Video-Bildrate ist
+    (25 → 50 Hz, 24 → 24 Hz, 29,97 → 59,94 Hz), möglichst hoch bis 60 Hz. (Ausgang, Modus) oder None."""
+    out = next((o for o in _outputs() if o.get("enabled")), None)
+    cur = out and next((m for m in out.get("modes", []) if m.get("current")), None)
+    if not cur or fps <= 0:
+        return None
+    fits = []
+    for m in out["modes"]:
+        if (m["width"], m["height"]) != (cur["width"], cur["height"]) or m["refresh"] > 60.5:
+            continue
+        k = round(m["refresh"] / fps)
+        if k >= 1 and abs(m["refresh"] - k * fps) / m["refresh"] < 0.0005:
+            fits.append(m)
+    if not fits:
+        return None
+    best = max(fits, key=lambda m: m["refresh"])
+    return out["name"], f"{best['width']}x{best['height']}@{best['refresh']:f}"
 
 
 def apply_display_mode(wanted):

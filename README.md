@@ -104,8 +104,18 @@ Repository. Ohne Internet (z. B. im Urlaub) wartet der Start höchstens 5 s aufs
 vorhandene Version; beim nächsten Start wird das Update erneut versucht. git hat ein Zeitlimit und fragt nie nach
 einem Passwort, damit auch ein WLAN ohne Internet (Hotel-Anmeldeseite) den Start nicht aufhält. Zusätzlich: Einstellungen → System → **Nach Updates suchen** – lädt die neue Version
 und startet RaspiTV damit neu.
+- **Auflösung und Bildrate** (Einstellungen → Darstellung): alle Stufen, die der Fernseher kann (4K, QHD, Full HD, HD),
+  mit Empfehlung für das erkannte Pi-Modell (Pi 4: Full HD 60 Hz; 4K gibt es meist nur mit 30 Hz und ruckelt). Nach dem
+  Umschalten „Bild in Ordnung?“, ohne Antwort nach 15 s zurück. **Bildrate an Videos anpassen**: `tv.js` misst die Bildrate
+  des laufenden Videos (`requestVideoFrameCallback`), mpv meldet `container-fps`; RaspiTV schaltet in derselben Auflösung
+  auf ein passendes Vielfaches (25 → 50 Hz, 23,976 → 23,976 Hz) und nach dem Video zurück (`POST /video {"fps": 0}`).
+- **YouTube**: bleibt die offizielle TV-Oberfläche (youtube.com/tv); `youtube-keys.js` gibt die Fernbedienungstasten als
+  Tastendrücke weiter (die Fernbedienung ist exklusiv bei RaspiTV, YouTube bekam sonst keine Tasten).
 
 ## Entwicklung
+
+Nach Änderungen an `tv-extension/background.js` die Versionsnummer in `manifest.json` erhöhen – sonst behält
+Chromium den alten Service Worker.
 
 `dev/start.sh <app>` startet RaspiTV mit offenem DevTools-Port (9222) und öffnet eine App,
 `dev/cdp.py` führt JavaScript in der Seite oder der Erweiterung aus, `dev/shot.sh` macht einen

@@ -19,6 +19,7 @@ class JellyfinUI:
     def init_jellyfin(self):
         self.jf = None          # Zustand, solange die App offen ist
         self.mpv = jf.MpvPlayer()
+        self.mpv.on_fps = lambda fps: self.video_rate(fps)  # Bildraten-Anpassung (raspitv.py)
 
     def jf_client(self):
         s = self.settings

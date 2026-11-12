@@ -120,6 +120,7 @@ class Home(AccountsUI, JellyfinUI, QObject):
         self.outputs = []  # Audio-Ausgänge (für Einstellungen → Ton)
         self.modes = []    # Auflösungen des Bildschirms (für Einstellungen → Darstellung)
         self.mode_pending = None  # gerade umgeschaltet, Antwort auf „Bild in Ordnung?“ steht aus
+        self.rate_restore = None  # Bildraten-Anpassung: (Ausgang, Modus) zum Zurückstellen nach dem Video
         self.vol = {"value": 0, "muted": False, "seq": 0}  # Lautstärke-Anzeige (seq zählt Tastendrücke)
         self.last_input = time.monotonic()  # letzter Tastendruck (Bildschirmschoner, Bildschirm aus)
         self.saver = None              # None | "clock" (Bildschirmschoner) | "off" (Bildschirm aus)
@@ -525,6 +526,8 @@ class Home(AccountsUI, JellyfinUI, QObject):
             self.activate_window()
         if self.ticks % 15 == 0 and not self.running:
             self.update_wifi_name()
+        if self.rate_restore and not self.player.running() and not self.mpv.running():
+            self.restore_rate()
         now = time.monotonic()
         self.check_sleep(now)
         self.check_saver(now)
@@ -808,6 +811,31 @@ class Home(AccountsUI, JellyfinUI, QObject):
         self.busy(f"Stelle {mode['label']} ein …")
         self.run_bg(work, done)
 
+    def video_rate(self, fps):
+        """Ein Video läuft mit `fps` Bildern/s (aus jedem Thread): Fernseher auf eine passende Bildrate
+        schalten (25 → 50 Hz, 24 → 24 Hz …), damit jedes Bild gleich lang steht. Zurück, wenn das Video endet."""
+        if fps <= 0:  # Video vorbei (Player verlassen, die App läuft weiter)
+            self.bgDone.emit(self.restore_rate)
+            return
+
+        def apply():
+            if not self.settings["match_rate"] or not (self.player.running() or self.mpv.running()):
+                return
+            target = cfg.mode_for_rate(fps)
+            current = cfg.current_display_mode()
+            if not target or target[1] == current[1]:
+                return
+            if self.rate_restore is None:
+                self.rate_restore = current
+            cfg.set_display_mode(*target)
+        threading.Thread(target=apply, daemon=True).start()
+
+    def restore_rate(self):
+        """Nach dem Video: zurück zur vorigen Bildrate."""
+        restore, self.rate_restore = self.rate_restore, None
+        if restore and restore[0]:
+            threading.Thread(target=cfg.set_display_mode, args=restore, daemon=True).start()
+
     def refresh_modes(self):
         self.modes = cfg.display_modes()
         if self.view != "settings" or self.sub:
@@ -925,19 +953,14 @@ class Home(AccountsUI, JellyfinUI, QObject):
         display = []
         if getattr(self, "modes", None):
             display.append({"kind": "header", "label": "Auflösung"})
-            model = cfg.pi_model()
-            best = next((m for m in self.modes if m["verdict"] == "empfohlen"), None)
-            if model:
-                short = model.split(" Rev ")[0]
-                display.append({"kind": "info", "label": short + " erkannt",
-                                "value": f"Empfohlen: {best['label'].split(' · ')[0]} ({best['rate']})" if best else ""})
+            display.append({"kind": "toggle", "label": "Bildrate an Videos anpassen",
+                            "value": lambda: s["match_rate"],
+                            "change": lambda step: self.set("match_rate", not s["match_rate"])})
             for mode in self.modes:
-                note = {"empfohlen": "★ Empfohlen", "gut": "", "langsam": "⚠ " + mode["note"]}[mode["verdict"]]
-                if mode["verdict"] == "gut":
-                    note = mode["note"]
-                parts = [p for p in (("✓ Aktiv" if mode["current"] else ""), note, mode["rate"]) if p]
-                display.append({"kind": "action", "label": mode["label"], "hint": "  ·  ".join(parts),
+                hint = ("✓  " if mode["current"] else "") + (mode["note"] or ("Aktiv" if mode["current"] else ""))
+                display.append({"kind": "action", "label": mode["label"], "hint": hint.strip(),
                                 "run": lambda mode=mode: self.choose_mode(mode)})
+        model = cfg.pi_model().split(" Rev ")[0].replace(" Model B", "")
 
         self.cats = [
             {"label": "Konto", "icon": "account", "desc": "Wer gerade schaut und eigene Logins",
@@ -945,7 +968,7 @@ class Home(AccountsUI, JellyfinUI, QObject):
                  {"kind": "info", "label": "Aktives Konto", "value": self.account["name"]},
                  {"kind": "action", "label": "Konto wechseln", "run": self.open_profiles},
              ]},
-            {"label": "Darstellung", "icon": "display", "desc": "Aussehen der Startseite und Auflösung",
+            {"label": "Darstellung", "icon": "display", "desc": f"Aussehen und Auflösung – Empfehlung passend zum {model}" if model else "Aussehen und Auflösung",
              "items": [
                  {"kind": "choice", "label": "Kachelgröße", "value": lambda: s["tile_size"].capitalize(), "change": cycle_size},
                  {"kind": "choice", "label": "Uhrzeit", "value": lambda: "24 Stunden" if s["clock_24h"] else "12 Stunden",
@@ -1312,7 +1335,7 @@ def main():
         home.key.emit(key)
 
     try:
-        remote.start(on_key, player.running)
+        remote.start(on_key, player.running, home.video_rate)
     except OSError:
         sys.exit("RaspiTV läuft bereits (Port 8765 ist belegt).")
     # Bluetooth-Fernbedienungen direkt lesen (auch während der Player vorne liegt)

@@ -37,6 +37,9 @@ async function listen() {
 
 chrome.runtime.onMessage.addListener((message) => {
   // Jede Nachricht (auch der regelmäßige "ping" der Seite) hält diesen Worker wach.
+  if (message.cmd === "video") {
+    fetch(`${BASE}/video`, { method: "POST", body: JSON.stringify({ fps: message.fps }) }).catch(() => {});
+  }
   if (message.cmd === "home") {
     fetch(`${BASE}/key`, { method: "POST", body: JSON.stringify({ key: "home" }) }).catch(() => {});
   }

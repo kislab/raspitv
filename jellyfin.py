@@ -292,6 +292,7 @@ class MpvPlayer:
 
     def __init__(self):
         self.proc = None
+        self.on_fps = None   # on_fps(bildrate) – einmal je Video, für die Bildraten-Anpassung von RaspiTV
         self.sock_path = os.path.join(tempfile.gettempdir(), f"raspitv-mpv-{os.getpid()}.sock")
         self.position = 0.0
         self.paused = False
@@ -353,10 +354,16 @@ class MpvPlayer:
 
         def watch():
             last = 0.0
+            rate_sent = False
             while self.running():
                 pos = self.query("time-pos")
                 if isinstance(pos, (int, float)):
                     self.position = pos
+                    if not rate_sent and pos > start + 1:  # Bildrate einmal melden (Bildraten-Anpassung)
+                        fps = self.query("container-fps")
+                        rate_sent = True
+                        if isinstance(fps, (int, float)) and fps > 0 and self.on_fps:
+                            self.on_fps(fps)
                 paused = self.query("pause")
                 if isinstance(paused, bool):
                     self.paused = paused

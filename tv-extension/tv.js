@@ -252,6 +252,52 @@
     else TV.home();
   }
 
+  // ---------- Bildrate des Videos (für die Bildraten-Anpassung in RaspiTV) ----------
+  // Läuft ein Video, die echte Bildrate über requestVideoFrameCallback messen (Abstand der Medienzeit
+  // zwischen Bildern) und einmal an RaspiTV melden – RaspiTV schaltet den Fernseher dann z. B. bei 25 fps auf
+  // 50 Hz, damit jedes Bild gleich lang steht (bei 60 Hz stocken Kameraschwenks leicht).
+  const RATES = [23.976, 24, 25, 29.97, 30, 50, 59.94, 60];
+  const rates = new WeakMap();   // Video → gemessene Bildrate
+  const measuring = new WeakSet();
+  let reported = 0, gone = 0;
+  function report(fps) {
+    if (fps === reported) return;
+    reported = fps;
+    chrome.runtime.sendMessage({ cmd: "video", fps }).catch(() => {}); // 0 = kein Video mehr
+  }
+  function measureVideo(video) {
+    if (measuring.has(video) || typeof video.requestVideoFrameCallback !== "function") return;
+    measuring.add(video);
+    const times = [];
+    let last = null;
+    const step = (now, meta) => {
+      if (last !== null && meta.presentedFrames === last.frames + 1) times.push(meta.mediaTime - last.time);
+      last = { time: meta.mediaTime, frames: meta.presentedFrames };
+      if (times.length < 60) return void video.requestVideoFrameCallback(step);
+      times.sort((a, b) => a - b);
+      const fps = 1 / times[times.length >> 1];
+      const rate = RATES.reduce((best, r) => (Math.abs(r - fps) < Math.abs(best - fps) ? r : best));
+      if (Math.abs(rate - fps) / rate < 0.03) {
+        rates.set(video, rate);
+        report(rate);
+      }
+    };
+    video.requestVideoFrameCallback(step);
+  }
+  setInterval(() => {
+    // Hauptvideo: groß, mit Ton, schon eine Weile gelaufen (keine Vorschau-Trailer). Pausiert zählt mit –
+    // sonst schaltete der Fernseher bei jeder Pause um.
+    const main = [...document.querySelectorAll("video")].find((v) =>
+      !v.ended && v.currentTime > 3 && v.offsetWidth > innerWidth * 0.6 && !v.muted);
+    if (main) {
+      gone = 0;
+      if (rates.has(main)) report(rates.get(main));
+      else if (!main.paused) measureVideo(main);
+    } else if (reported && ++gone >= 2) {
+      report(0); // Player verlassen: normale Bildrate
+    }
+  }, 2000);
+
   // ---------- Bildschirmtastatur ----------
 
   const ROWS = ["1234567890", "qwertzuiop", "asdfghjkl@", "yxcvbnm.-_"].map((r) => [...r]);

@@ -28,7 +28,7 @@ def notify(message):
     """Nachricht an die TV-Erweiterung (z. B. "volume:45:0" für die Lautstärke-Anzeige); von start() ersetzt."""
 
 
-def start(on_key, get_status):
+def start(on_key, get_status, on_video=None):
     """Startet den Server in einem Hintergrund-Thread. on_key wird dort aufgerufen.
 
     Danach nimmt `remote.press(key)` Tasten direkt angeschlossener Fernbedienungen an (remote_input.py):
@@ -93,6 +93,15 @@ def start(on_key, get_status):
             origin = self.headers.get("Origin")
             if origin and not origin.startswith("chrome-extension://"):
                 return self.reply({"error": "forbidden"}, 403)
+            if self.path == "/video":  # Bildrate des laufenden Videos (tv.js) – für die Bildraten-Anpassung
+                try:
+                    length = int(self.headers.get("Content-Length") or 0)
+                    fps = float(json.loads(self.rfile.read(length) or b"{}").get("fps") or 0)
+                except (ValueError, AttributeError, TypeError):
+                    return self.reply({"error": "bad json"}, 400)
+                if on_video and 0 <= fps < 200:
+                    on_video(fps)
+                return self.reply({"ok": True})
             if self.path != "/key":
                 return self.reply({"error": "not found"}, 404)
             try:
