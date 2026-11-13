@@ -76,25 +76,31 @@ Ein Befehl im Terminal des Raspberry Pi (Raspberry Pi OS):
 curl -fsSL https://raw.githubusercontent.com/kislab/raspitv/main/install.sh | bash
 ```
 
-Das lädt RaspiTV nach `~/raspitv`, installiert fehlende Pakete (`python3-pyqt5`, Qt Quick, `chromium`,
-`libwidevinecdm0` … – fragt dafür nach dem sudo-Passwort) und legt RaspiTV als Programm an:
-Symbol auf dem Desktop, Eintrag im Startmenü (Unterhaltung) und Autostart beim Hochfahren
-(Terminal öffnet sich und lädt RaspiTV). Beim Hochfahren ist der Desktop nicht zu sehen: ein Startbild mit dem
-RaspiTV-Logo (`splash.py`, gestartet über `~/.config/labwc/autostart` noch vor Desktop und Leiste, per Fensterregel
-in `~/.config/labwc/rc.xml` immer oben) zeigt „Starte …“, „Suche nach Updates …“ und bleibt, bis RaspiTV zu sehen ist. Ohne Autostart: `… | bash -s -- --no-autostart`.
-Derselbe Befehl aktualisiert eine bestehende Installation.
+Das fragt einmal nach dem sudo-Passwort, installiert, was die Oberfläche braucht (Python, Qt), lädt RaspiTV nach
+`~/raspitv` und öffnet den **Einrichtungs-Assistenten** auf dem Bildschirm – bedienbar mit Fernbedienung, Tastatur
+oder Handy: Willkommen → Benutzer anlegen → WLAN aussuchen → Auf Updates prüfen → Einrichten (Ladebalken) →
+Homescreen. Beim Einrichten (`boot/setup.sh`) kommen dazu: die übrigen Programme (`chromium`, `libwidevinecdm0`,
+`mpv` …), Startmenü-Eintrag und Desktop-Symbole, Start beim Hochfahren (ohne Desktop und Terminal; ein Startbild
+mit dem RaspiTV-Logo verdeckt den Systemstart), das **RaspiTV-Bootbild**, Bluetooth für Fernbedienungen,
+Neustart/Ausschalten ohne Passwort und das **Entschlacken** von Raspberry Pi OS (`boot/slim.sh`, umkehrbar mit
+`--undo`).
 
-Der Installer richtet außerdem das **RaspiTV-Bootbild** ein (Logo statt Regenbogen und Raspberry-Pi-Bild,
-Plymouth-Thema `boot/plymouth/`). Ohne: `… | bash -s -- --no-bootlogo`; rückgängig:
-`sudo ~/raspitv/boot/install-bootlogo.sh --remove`. Das Logo zeichnet `boot/make-logo.py`.
+Optionen: `… | bash -s -- --no-autostart`, `--no-bootlogo`, `--no-slim` (Schritt auslassen), `--no-gui` (alles im
+Terminal, z. B. per SSH ohne Bildschirm), `--setup` (Assistent auch bei bestehender Installation).
+Derselbe Befehl aktualisiert eine bestehende Installation (dann ohne Assistent, still im Terminal).
+
+Den Desktop braucht RaspiTV nicht mehr: **Einstellungen → Entwicklermodus** hat „Zurück zum Desktop“, „Beim
+Hochfahren starten“ und „RaspiTV deinstallieren“.
 
 ## Deinstallieren
 
-Doppelklick auf **„RaspiTV deinstallieren“** auf dem Desktop (oder `~/raspitv/uninstall.sh`). Nach der
-Bestätigung mit „ja“ entfernt es alles, was der Installer angelegt hat, und stellt das System wieder her:
+**Einstellungen → Entwicklermodus → RaspiTV deinstallieren**, Doppelklick auf **„RaspiTV deinstallieren“** auf
+dem Desktop oder `~/raspitv/uninstall.sh`. Nach der Bestätigung entfernt es alles, was der Installer angelegt hat, und stellt das System wieder her:
 Autostart, Startmenü-Eintrag und Desktop-Symbole, Bootbild (vorheriges Plymouth-Thema, `cmdline.txt`,
 `config.txt`), Bluetooth-Einstellung (`/etc/bluetooth/main.conf` aus der Sicherung), die von RaspiTV
-nachinstallierten Pakete (der Installer merkt sie sich in `~/.config/raspitv/installed-packages`), alle
+nachinstallierten Pakete (der Installer merkt sie sich in `~/.config/raspitv/installed-packages`), das
+Entschlacken (entfernte Programme kommen zurück, abgeschaltete Dienste laufen wieder, `config.txt` und
+Protokoll-Einstellung wie vorher), alle
 Einstellungen, Konten und Logins sowie `~/raspitv`. Gekoppelte Bluetooth-Geräte und WLAN bleiben.
 
 ## Updates

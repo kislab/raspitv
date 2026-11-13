@@ -48,8 +48,15 @@ if [ "${1:-}" = "--undo" ]; then
   if [ -s "$STATE/packages" ]; then
     say "Installiere die entfernten Programme wieder"
     sudo apt-get update -q
+    # nur, was es im Paketarchiv noch gibt (z. B. alte Kernel verschwinden) – sonst bräche apt alles ab
     # shellcheck disable=SC2046
-    sudo apt-get install -y $(cat "$STATE/packages") || echo "!! Nicht alle Pakete ließen sich installieren"
+    AVAIL="$(apt-cache policy $(cat "$STATE/packages") 2>/dev/null |
+      awk '/^[^ ]/{p=$1; sub(":$","",p)} /Candidate:/{if ($2 != "(none)") print p}')"
+    # shellcheck disable=SC2086
+    if ! sudo apt-get install -y $AVAIL; then
+      echo "!! Gemeinsam ging es nicht – einzeln:"
+      for p in $AVAIL; do sudo apt-get install -y "$p" >/dev/null 2>&1 || echo "   nicht installiert: $p"; done
+    fi
   fi
   for u in $(cat "$STATE/units" 2>/dev/null); do sudo systemctl unmask "$u" 2>/dev/null; sudo systemctl enable "$u" 2>/dev/null; done
   for u in $(cat "$STATE/user-units" 2>/dev/null); do systemctl --user unmask "$u" 2>/dev/null; done

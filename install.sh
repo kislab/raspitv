@@ -2,20 +2,28 @@
 # RaspiTV installieren oder aktualisieren:
 #   curl -fsSL https://raw.githubusercontent.com/kislab/raspitv/main/install.sh | bash
 #
-# Holt RaspiTV von GitHub nach ~/raspitv, installiert fehlende Pakete (fragt dafür einmal nach dem
-# sudo-Passwort) und legt RaspiTV als Programm an: Startmenü, Symbol auf dem Desktop und Autostart.
-# Optionen: --no-autostart (kein Start beim Hochfahren), --no-bootlogo (Standard-Bootbild behalten),
+# Erstinstallation: fragt einmal nach dem sudo-Passwort, installiert, was die Oberfläche braucht (Python, Qt),
+# holt RaspiTV von GitHub nach ~/raspitv und öffnet dann den Einrichtungs-Assistenten auf dem Bildschirm
+# (bedienbar mit Fernbedienung, Tastatur oder Handy): Willkommen → Benutzer → WLAN → Updates → Einrichten
+# (Programme, Autostart, Bootbild, Bluetooth, Entschlacken) → Homescreen.
+# Ist RaspiTV schon installiert, wird es nur aktualisiert und die Einrichtung still im Terminal nachgezogen.
+#
+# Optionen: --no-autostart, --no-bootlogo, --no-slim (Schritte auslassen), --no-gui (alles im Terminal,
+#           z. B. per SSH ohne Bildschirm), --setup (Assistent auch bei bestehender Installation),
 #           --dir PFAD (anderer Installationsordner)
 set -euo pipefail
 
 REPO="https://github.com/kislab/raspitv.git"
 DIR="$HOME/raspitv"
-AUTOSTART=1
-BOOTLOGO=1
+SKIP=""
+GUI=auto
 while [ $# -gt 0 ]; do
   case "$1" in
-    --no-autostart) AUTOSTART=0 ;;
-    --no-bootlogo) BOOTLOGO=0 ;;
+    --no-autostart) SKIP="$SKIP autostart" ;;
+    --no-bootlogo) SKIP="$SKIP bootlogo" ;;
+    --no-slim) SKIP="$SKIP slim" ;;
+    --no-gui) GUI=no ;;
+    --setup) GUI=yes ;;
     --dir) DIR="$2"; shift ;;
     *) echo "Unbekannte Option: $1" >&2; exit 1 ;;
   esac
@@ -23,27 +31,33 @@ while [ $# -gt 0 ]; do
 done
 
 say() { printf '\033[1;36m==>\033[0m %s\n' "$*"; }
-
-# 1. Pakete (nur fehlende installieren)
-PACKAGES="git python3 python3-pyqt5 python3-pyqt5.qtquick qml-module-qtquick2 qml-module-qtquick-window2 qml-module-qtgraphicaleffects mpv chromium libwidevinecdm0 lxterminal libqrencode4 fonts-noto-color-emoji"
-MISSING=""
-for p in $PACKAGES; do
-  dpkg -s "$p" >/dev/null 2>&1 || MISSING="$MISSING $p"
-done
 STATE="${XDG_CONFIG_HOME:-$HOME/.config}/raspitv"
+
+# 0. sudo einmal hier im Terminal – der Assistent fragt nie nach einem Passwort
+say "Für die Einrichtung wird einmal das sudo-Passwort gebraucht"
+sudo -v
+# gültig halten, solange eingerichtet wird (höchstens 45 Minuten, danach läuft RaspiTV einfach weiter)
+( for _ in $(seq 54); do sleep 50; sudo -n true 2>/dev/null || exit; done ) &
+KEEPALIVE=$!
+trap 'kill $KEEPALIVE 2>/dev/null' EXIT
+
+# 1. Was die Oberfläche (und damit der Assistent) braucht
+BASE="git python3 python3-pyqt5 python3-pyqt5.qtquick qml-module-qtquick2 qml-module-qtquick-window2
+  qml-module-qtgraphicaleffects fonts-noto-color-emoji"
+MISSING=""
+for p in $BASE; do dpkg -s "$p" >/dev/null 2>&1 || MISSING="$MISSING $p"; done
 if [ -n "$MISSING" ]; then
-  say "Installiere fehlende Pakete:$MISSING"
-  sudo apt-get update
-  sudo apt-get install -y $MISSING
-  # merken, was RaspiTV nachinstalliert hat – nur das entfernt die Deinstallation wieder
+  say "Installiere, was die Oberfläche braucht:$MISSING"
+  sudo apt-get update -q
+  # shellcheck disable=SC2086
+  sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y $MISSING
   mkdir -p "$STATE"
-  for p in $MISSING; do echo "$p"; done >> "$STATE/installed-packages"
-  sort -u -o "$STATE/installed-packages" "$STATE/installed-packages"
-else
-  say "Alle Pakete sind schon installiert"
+  { cat "$STATE/installed-packages" 2>/dev/null; for p in $MISSING; do echo "$p"; done; } | sort -u > "$STATE/installed-packages.new"
+  mv "$STATE/installed-packages.new" "$STATE/installed-packages"
 fi
 
 # 2. Programm holen bzw. aktualisieren
+FRESH=0
 if [ -d "$DIR/.git" ]; then
   say "Aktualisiere RaspiTV in $DIR"
   git -C "$DIR" pull --ff-only
@@ -53,58 +67,30 @@ elif [ -e "$DIR" ]; then
 else
   say "Lade RaspiTV nach $DIR"
   git clone "$REPO" "$DIR"
+  FRESH=1
 fi
 
-# 3. Programm-Eintrag: Startmenü und Desktop-Symbol (vor dem Start wird kurz nach Updates gesucht)
-ICON="$DIR/logos/raspitv-icon.png"
-APPS="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
-DESKTOP_DIR="$(xdg-user-dir DESKTOP 2>/dev/null || echo "$HOME/Desktop")"
-mkdir -p "$APPS" "$DESKTOP_DIR"
-ENTRY="[Desktop Entry]
-Type=Application
-Name=RaspiTV
-Comment=TV-Oberfläche für Netflix, Disney+, YouTube, Prime Video, Jellyfin und mehr
-Exec=bash -c \"cd '$DIR' && git pull --ff-only -q; exec python3 raspitv.py\"
-Icon=$ICON
-Terminal=false
-Categories=AudioVideo;Video;
-StartupNotify=false"
-say "Lege Startmenü-Eintrag an"
-printf '%s\n' "$ENTRY" > "$APPS/raspitv.desktop"
-say "Lege Symbol auf dem Desktop an"
-printf '%s\n' "$ENTRY" > "$DESKTOP_DIR/RaspiTV.desktop"
-chmod +x "$DESKTOP_DIR/RaspiTV.desktop"
-# Als vertrauenswürdig markieren, damit der Desktop nicht bei jedem Doppelklick nachfragt
-gio set "$DESKTOP_DIR/RaspiTV.desktop" metadata::trusted true 2>/dev/null || true
-say "Lege Symbol zum Deinstallieren auf dem Desktop an"
-"$DIR/uninstall.sh" --desktop-icon
-update-desktop-database "$APPS" 2>/dev/null || true
-
-# 4. Autostart: Terminal öffnen und darin RaspiTV laden (mit Update vorher)
-if [ "$AUTOSTART" = 1 ]; then
-  say "Schalte Autostart ein"
-  python3 -c "import sys; sys.path.insert(0, sys.argv[1]); import settings; settings.set_autostart(True)" "$DIR"
+# 3. Bildschirm für den Assistenten? (auch beim Aufruf per SSH, wenn auf dem Pi der Desktop läuft)
+RUNTIME="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+if [ -z "${WAYLAND_DISPLAY:-}" ] && [ -S "$RUNTIME/wayland-0" ]; then
+  export XDG_RUNTIME_DIR="$RUNTIME" WAYLAND_DISPLAY=wayland-0
+fi
+if [ "$GUI" = auto ]; then
+  if [ "$FRESH" = 1 ] && [ -n "${WAYLAND_DISPLAY:-}${DISPLAY:-}" ]; then GUI=yes; else GUI=no; fi
 fi
 
-# 5. Bootbild: RaspiTV-Logo statt Regenbogen und Raspberry-Pi-Bild
-if [ "$BOOTLOGO" = 1 ] && command -v plymouth-set-default-theme >/dev/null; then
-  say "Richte das RaspiTV-Bootbild ein (dauert etwas: initramfs wird neu gebaut)"
-  sudo "$DIR/boot/install-bootlogo.sh"
+if [ "$GUI" = yes ]; then
+  # laufendes RaspiTV beenden (der Assistent ist RaspiTV im Einrichtungsmodus)
+  pkill -x -f "python3 ($DIR/)?raspitv\.py( --[a-z-]+)?" 2>/dev/null || true
+  sleep 1
+  say "Öffne den Einrichtungs-Assistenten auf dem Bildschirm – weiter geht es dort"
+  cd "$DIR"
+  RASPITV_SETUP_SKIP="$SKIP" python3 raspitv.py --setup
+else
+  say "Richte RaspiTV ein"
+  for step in packages entries autostart bootlogo bluetooth power slim; do
+    case " $SKIP " in *" $step "*) continue ;; esac
+    "$DIR/boot/setup.sh" "$step"
+  done
+  say "Fertig! RaspiTV startest du über das Desktop-Symbol oder das Startmenü (Unterhaltung → RaspiTV)."
 fi
-
-# 6. Bluetooth: Zufallsadresse („Privacy“) – sonst lehnen Amazon-/Fire-TV-Fernbedienungen das Koppeln ab
-BTCONF=/etc/bluetooth/main.conf
-if [ -f "$BTCONF" ] && ! grep -q '^Privacy *= *device' "$BTCONF"; then
-  say "Stelle Bluetooth für Fernbedienungen ein (Privacy = device)"
-  sudo cp "$BTCONF" "$BTCONF.raspitv-backup"
-  sudo sed -i '0,/^\[General\]/s//[General]\nPrivacy = device/' "$BTCONF"
-  sudo systemctl restart bluetooth || true
-fi
-
-# 7. Neustart/Ausschalten aus den Einstellungen ohne Passwort (auch wenn z. B. eine SSH-Sitzung offen ist)
-if [ ! -f /etc/polkit-1/rules.d/50-raspitv-power.rules ]; then
-  say "Erlaube Neustart und Ausschalten aus RaspiTV"
-  sudo "$DIR/boot/install-power-rule.sh" "$USER"
-fi
-
-say "Fertig! RaspiTV startest du über das Desktop-Symbol oder das Startmenü (Unterhaltung → RaspiTV)."

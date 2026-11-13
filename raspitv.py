@@ -41,6 +41,7 @@ import remote_input
 import settings as cfg
 from jellyfin_ui import JellyfinUI
 from profiles_ui import MAX_LEN, PIN_LEN, AccountsUI
+from setup_ui import SetupUI
 
 ROOT = Path(__file__).resolve().parent
 CACHE = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "raspitv" / "logos"
@@ -80,7 +81,7 @@ def logo_url(app, variant):
     return QUrl.fromLocalFile(str(target)).toString()
 
 
-class Home(AccountsUI, JellyfinUI, QObject):
+class Home(AccountsUI, JellyfinUI, SetupUI, QObject):
     """Zustand und Logik der Oberfläche. QML liest `state` und zeichnet danach."""
     key = pyqtSignal(str)       # auch aus dem Fernbedienungs-Thread auslösbar
     stateChanged = pyqtSignal()
@@ -101,7 +102,7 @@ class Home(AccountsUI, JellyfinUI, QObject):
         self.row = APPS
         self.col = 0                   # gewählte App
         self.store_col = 0             # gewählte App in „Verfügbare Apps“
-        self.view = self.start_view    # "home" | "settings" | "profiles" („Wer schaut?“)
+        self.view = self.start_view    # "home" | "settings" | "profiles" („Wer schaut?“) | "setup"
         self.cats, self.cat = [], 0    # Einstellungs-Kategorien und gewählte Kategorie
         self.items, self.item = [], 0  # Zeilen der gewählten Kategorie und gewählte Zeile
         self.pane = "cats"             # Fokus in den Einstellungen: "cats" (links) | "items" (rechts)
@@ -141,6 +142,7 @@ class Home(AccountsUI, JellyfinUI, QObject):
         self.running = None            # gestarteter Dienst, solange der Player läuft
         self.started = 0.0
         self.refresh_apps()
+        self.init_setup()              # Einrichtungs-Assistent beim ersten Start (setup_ui.py, --setup)
 
         self.key.connect(self.handle)
         self.bgDone.connect(lambda done: (done(), self.push()))
@@ -187,6 +189,7 @@ class Home(AccountsUI, JellyfinUI, QObject):
                          "cat": self.cat, "pane": self.pane, "item": self.item, "sub": self.sub_info(),
                          "items": [self.item_info(it) for it in self.items]},
             "profiles": {"list": [self.account_info(a) for a in self.acc_data["accounts"]], "prof": self.prof},
+            "setup": self.setup_state(),
             "osk": dict({k: self.osk[k] for k in ("title", "value", "mode", "row", "col", "error", "shift", "hint")},
                         rows=self.osk_rows()) if self.osk else None,
         }
@@ -294,6 +297,8 @@ class Home(AccountsUI, JellyfinUI, QObject):
             self.menu_key(key)
         elif self.moving:
             self.move_key(key)
+        elif self.view == "setup":
+            self.setup_key(key)
         elif self.view == "profiles":
             self.profiles_key(key)
         elif self.view == "jellyfin":
@@ -1450,7 +1455,11 @@ def main():
     # Auch beim Beenden von außen (kill, Abmelden) den Player mit schließen
     signal.signal(signal.SIGTERM, lambda *_: app.quit())
     signal.signal(signal.SIGINT, lambda *_: app.quit())
-    signal.signal(signal.SIGHUP, lambda *_: app.quit())  # Terminal wurde geschlossen
+    if {"--setup", "--after-setup"} & set(sys.argv):
+        # aus install.sh im Terminal gestartet: Schließen des Terminals soll RaspiTV nicht beenden
+        signal.signal(signal.SIGHUP, signal.SIG_IGN)
+    else:
+        signal.signal(signal.SIGHUP, lambda *_: app.quit())  # Terminal wurde geschlossen
     QTimer(app, interval=200, timeout=lambda: None).start()  # Python-Signale auch während Qt läuft annehmen
     view.showFullScreen()
 
