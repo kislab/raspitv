@@ -9,7 +9,9 @@
       "initiatorDomains": [
         "www.ardmediathek.de",
         "www.zdf.de",
-        "www.3sat.de"
+        "www.3sat.de",
+        "www.arte.tv",
+        "pluto.tv"
       ],
       "resourceTypes": [
         "script",
