@@ -10,6 +10,7 @@
 #   - Bluetooth: /etc/bluetooth/main.conf aus der Sicherung (Privacy-Einstellung)
 #   - Regel für Neustart/Ausschalten ohne Passwort (/etc/polkit-1/rules.d/50-raspitv-power.rules)
 #   - Pakete, die RaspiTV nachinstalliert hat (nicht Chromium, git usw., die schon da waren)
+#   - Entschlackung (boot/slim.sh): entfernte Programme, abgeschaltete Dienste, config.txt, Protokoll-Einstellung
 #   - Einstellungen, Konten und Logins (Netflix, Disney+, Jellyfin …) sowie den Ordner ~/raspitv
 # Gekoppelte Bluetooth-Geräte (z. B. die Fernbedienung) und WLAN-Verbindungen bleiben erhalten.
 set -uo pipefail
@@ -109,6 +110,12 @@ if sudo -v; then
   fi
 
   sudo "$DIR/boot/install-power-rule.sh" --remove || warn "Regel für Neustart/Ausschalten blieb bestehen"
+
+  # Entschlacktes System (boot/slim.sh) wiederherstellen: entfernte Programme, Dienste, config.txt
+  if [ -d "$CONFIG/raspitv/slim" ]; then
+    say "Stelle das entschlackte Raspberry Pi OS wieder her"
+    "$DIR/boot/slim.sh" --undo || warn "Entschlackung konnte nicht vollständig zurückgenommen werden"
+  fi
 
   INSTALLED=""
   for p in $PACKAGES; do
