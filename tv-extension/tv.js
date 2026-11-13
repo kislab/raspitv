@@ -4,7 +4,12 @@
 // Fernbedienungs-Schnittstelle von RaspiTV. Seitenspezifisches Verhalten (z. B. Netflix)
 // hängt sich über TV.site ein.
 (() => {
-  if (window.top !== window || window.TV) return;
+  // Anmeldefenster, die als eingebettetes Fenster erscheinen (Apple-ID bei Apple Music/TV+, Plex): dort läuft die
+  // Bedienung ebenfalls; das Fenster darüber hält sich dann zurück, und die Bildschirmtastatur erscheint groß im
+  // Hauptfenster und tippt in das Feld im eingebetteten Fenster.
+  const LOGIN_FRAME = /^https:\/\/(idmsa\.apple\.com\/|(music|tv)\.apple\.com\/includes\/commerce\/authenticate|app\.plex\.tv\/auth-form)/;
+  const inFrame = window.top !== window;
+  if ((inFrame && !LOGIN_FRAME.test(location.href)) || window.TV) return;
 
   const FOCUSABLE_LIST = [
     "a[href]", "button", "input:not([type=hidden])", "select", "textarea",
@@ -84,7 +89,8 @@
   function currentScope() {
     const dialogs = [...document.querySelectorAll("[role=dialog], dialog[open]")].filter((d) => {
       const r = d.getBoundingClientRect();
-      return r.width > 100 && r.height > 100;
+      // über Deckkraft 0 ausgeblendete Dialoge und solche ohne Wählbares (z. B. leere Cookie-Hüllen) zählen nicht
+      return r.width > 100 && r.height > 100 && opaque(d) && [...focusables(d)].some(selectable);
     });
     return TV.site.scope() || dialogs.pop() || null;
   }
@@ -164,8 +170,22 @@
       const r = el.getBoundingClientRect();
       return r.top >= 0 && r.bottom <= innerHeight;
     });
-    return onScreen.find(isTextInput) || onScreen[0] || list[0]; // Formulare: gleich ins Textfeld
+    // Cookie-Hinweis: gleich auf „Ablehnen“ bzw. „Nur notwendige“ (sonst öffnet OK oft „Weitere Informationen“)
+    const consent = onScreen.find((el) => CONSENT.test((el.innerText || el.value || el.getAttribute("aria-label") || "").trim()) && opaque(el));
+    if (consent) return consent;
+    // Formulare: gleich ins Textfeld; Anmeldeseite ohne Feld: „Weiter mit E-Mail“ statt z. B. „Nutzungsbedingungen“
+    const label = (el) => (el.innerText || el.value || el.getAttribute("aria-label") || "").trim();
+    return onScreen.find(isTextInput) || onScreen.find((el) => /mit e-?mail/i.test(label(el))) || onScreen[0] || list[0];
   }
+  /** Wirklich zu sehen (nicht ausgeblendet über Deckkraft 0 – so verschwinden manche Cookie-Hinweise nur)? */
+  function opaque(el) {
+    for (let e = el; e && e !== document.documentElement; e = e.parentElement) {
+      const st = getComputedStyle(e);
+      if (+st.opacity < 0.05 || st.visibility === "hidden") return false;
+    }
+    return true;
+  }
+  const CONSENT = /^(alle ablehnen|ablehnen|nur (technisch )?(notwendige|wesentliche|erforderliche|essenzielle|essentielle|nötige)( cookies)?( akzeptieren| zulassen| erlauben)?|optionale (cookies )?ablehnen|reject all|reject|decline|only essential( cookies)?|necessary only)$/i;
 
   function nearest(list, rect) {
     const cx = rect.left + rect.width / 2, cy = rect.top + rect.height / 2;
@@ -243,7 +263,17 @@
     const el = TV.current;
     if (!el || !el.isConnected) return move("down");
     if (isTextInput(el)) return openKeyboard(el);
+    if (inFrame) pointerPress(el); // Anmeldefenster (z. B. Plex) reagieren erst auf Zeiger-/Maus-Ereignisse
     el.click();
+  }
+  function pointerPress(el) {
+    const r = el.getBoundingClientRect();
+    const o = { bubbles: true, cancelable: true, composed: true, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2,
+      button: 0, pointerId: 1, pointerType: "mouse", isPrimary: true };
+    el.dispatchEvent(new PointerEvent("pointerdown", o));
+    el.dispatchEvent(new MouseEvent("mousedown", o));
+    el.dispatchEvent(new PointerEvent("pointerup", o));
+    el.dispatchEvent(new MouseEvent("mouseup", o));
   }
 
   function back() {
@@ -334,11 +364,90 @@
   }
 
   function openKeyboard(input, onClose) {
+    if (inFrame && !onClose) return openRemoteKeyboard(input);
     const box = document.createElement("div");
     box.id = "tv-osk";
     document.documentElement.append(box);
     osk = { input, box, row: 1, col: 0, shift: false, onClose };
     renderKeyboard();
+    loadPhoneQr(osk);
+  }
+
+  // ---------- Tastatur für Felder in eingebetteten Anmeldefenstern ----------
+  // Im Fenster: das Hauptfenster bitten, die Tastatur zu zeigen; Eingaben kommen zurück.
+  let remoteInput = null;
+  function openRemoteKeyboard(input) {
+    remoteInput = input;
+    window.top.postMessage({ tvosk: "open", type: input.type, value: input.value }, "*");
+  }
+  if (inFrame) {
+    window.addEventListener("message", (e) => {
+      const d = e.data || {};
+      if (e.source !== window.top || !remoteInput || !d.tvosk) return;
+      if (d.tvosk === "value") setValue(remoteInput, d.value);
+      else if (d.tvosk === "done") {
+        const input = remoteInput;
+        remoteInput = null;
+        setValue(input, d.value);
+        input.dispatchEvent(new Event("change", { bubbles: true }));
+        if (d.submit) nextFieldOrSubmit(input);
+      }
+    });
+  } else {
+    // Im Hauptfenster: Tastatur über einem unsichtbaren Stellvertreter-Feld, jede Änderung geht an das Fenster
+    window.addEventListener("message", (e) => {
+      const d = e.data || {};
+      if (d.tvosk !== "open" || osk || !e.source || e.source === window) return;
+      const source = e.source;
+      const proxy = document.createElement("input");
+      proxy.type = d.type === "password" ? "password" : "text";
+      proxy.value = String(d.value || "");
+      proxy.style.cssText = "position:fixed;left:-9999px;top:0;opacity:0";
+      proxy.__remote = true;
+      document.documentElement.append(proxy);
+      proxy.addEventListener("input", () => source.postMessage({ tvosk: "value", value: proxy.value }, "*"));
+      openKeyboard(proxy, (value) => {
+        source.postMessage({ tvosk: "done", value, submit: !!proxy.__submit }, "*");
+        proxy.remove();
+      });
+    });
+  }
+
+  // QR-Code neben der Tastatur: koppelt das Handy und macht es gleich zur Tastatur (Anmelden per Handy)
+  let qrCache = null;
+  function loadPhoneQr(o) {
+    const show = (data) => {
+      if (osk !== o || !data || !data.qr || !data.qr.length) return;
+      o.qr = data;
+      renderKeyboard();
+    };
+    if (qrCache && Date.now() - qrCache.at < 8 * 60e3) return show(qrCache.data);
+    chrome.runtime.sendMessage({ cmd: "phoneqr" }).then((data) => {
+      if (data && data.qr) qrCache = { at: Date.now(), data };
+      show(data);
+    }).catch(() => {});
+  }
+  function qrPanel(data) {
+    const panel = document.createElement("div");
+    panel.className = "tv-osk-qr";
+    const n = data.qr.length, quiet = 2, scale = 5;
+    const canvas = document.createElement("canvas");
+    canvas.width = canvas.height = (n + quiet * 2) * scale;
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = "#000";
+    data.qr.forEach((row, y) => [...row].forEach((bit, x) => {
+      if (bit === "1") ctx.fillRect((x + quiet) * scale, (y + quiet) * scale, scale, scale);
+    }));
+    const title = document.createElement("div");
+    title.className = "tv-osk-qr-title";
+    title.textContent = "Mit dem Handy tippen";
+    const sub = document.createElement("div");
+    sub.className = "tv-osk-qr-sub";
+    sub.textContent = "QR-Code scannen (gleiches WLAN)";
+    panel.append(canvas, title, sub);
+    return panel;
   }
 
   function closeKeyboard() {
@@ -371,7 +480,7 @@
     const hint = document.createElement("div");
     hint.className = "tv-osk-hint";
     hint.textContent = osk.hint || "";
-    box.replaceChildren(text, ...(osk.hint ? [hint] : []), ...rows);
+    box.replaceChildren(text, ...(osk.hint ? [hint] : []), ...rows, ...(osk.qr ? [qrPanel(osk.qr)] : []));
   }
 
   function keyboardKey(key) {
@@ -406,10 +515,22 @@
   /** Verarbeitet eine Taste; gibt false zurück, wenn die Seite sie selbst behandeln soll. */
   let pressed = false; // hat jemand schon eine Taste gedrückt?
 
+  /** Ist ein Anmeldefenster (eingebettet) sichtbar? Dann gehören ihm die Tasten. */
+  function delegated() {
+    return [...document.querySelectorAll("iframe")].some((f) => {
+      if (!LOGIN_FRAME.test(f.src || "")) return false;
+      const r = f.getBoundingClientRect();
+      return r.width > 200 && r.height > 120 && getComputedStyle(f).visibility !== "hidden";
+    });
+  }
+
   function handle(key, fromKeyboard) {
     pressed = true;
+    if (inFrame && key === "home") return true; // erledigt das Hauptfenster
     if (key === "home") return TV.home(), true;
     if (osk) return keyboardKey(key), true;
+    if (remoteInput) return true;                 // Tastatur im Hauptfenster ist offen
+    if (delegated()) return true;
     if (TV.site.takeover()) return TV.site.key(key), true;
     if (TV.site.inPlayer()) return TV.site.playerKey(key, fromKeyboard);
     if (key === "ok") ok();
@@ -475,13 +596,39 @@
     toastTimer = setTimeout(() => toast.classList.remove("tv-toast-on"), seconds * 1000);
   }
 
+  /** Nach „Senden“ vom Handy: ins nächste Feld des Formulars (E-Mail → Passwort) springen und dort gleich die
+      Tastatur öffnen – nach dem letzten Feld das Formular abschicken (Anmelden per Handy in einem Rutsch). */
+  function nextFieldOrSubmit(input) {
+    const scope = input.form || input.closest("form, [role=dialog], main") || document;
+    const fields = [...scope.querySelectorAll("input")].filter((el) => isTextInput(el) && visible(el) && !el.disabled);
+    const next = fields[fields.indexOf(input) + 1];
+    if (next) {
+      focus(next);
+      next.focus();
+      openKeyboard(next);
+      return;
+    }
+    for (const type of ["keydown", "keypress", "keyup"]) {
+      input.dispatchEvent(new KeyboardEvent(type, { key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true }));
+    }
+    const btn = scope.querySelector("button[type=submit], input[type=submit]");
+    if (btn && visible(btn)) btn.click();
+    else if (input.form && typeof input.form.requestSubmit === "function") {
+      try { input.form.requestSubmit(); } catch (e) { /* Formular will es anders */ }
+    }
+  }
+
   // Text vom Handy (RaspiTV schickt "text:<fertig 0/1>:<text>"): in die offene Bildschirmtastatur
   // bzw. das gewählte Textfeld der Seite; „fertig“ schließt die Tastatur bzw. drückt Enter.
   function typeText(text, submit) {
     if (osk) {
       setValue(osk.input, text);
-      if (submit) closeKeyboard();
-      else renderKeyboard();
+      if (!submit) return renderKeyboard();
+      const input = osk.input;
+      const own = !!osk.onClose; // Feld der eigenen Oberfläche (z. B. Suche): nur schließen
+      if (input.__remote) input.__submit = true;
+      closeKeyboard();
+      if (!own) nextFieldOrSubmit(input);
       return;
     }
     const active = document.activeElement;
@@ -501,7 +648,10 @@
     const t = /^toast:(\d+):(.*)$/s.exec(message.key || "");
     const typed = /^text:([01]):(.*)$/s.exec(message.key || "");
     if (typed) {
+      if (inFrame) return; // Handy-Text geht in die Tastatur des Hauptfensters
       typeText(typed[2], typed[1] === "1");
+    } else if (inFrame) {
+      if (message.key && !t && !v && message.key !== "playpause") handle(message.key, false);
     } else if (t) {
       showToast(+t[1], t[2]);
     } else if (v) {
@@ -520,6 +670,7 @@
   let lastScope = null; // zuletzt gesehener Dialog
   let opener = null;    // Element, von dem aus der Dialog geöffnet wurde
   let openTries = 0;
+  let consentScope = false; // offener Dialog ist ein Cookie-Hinweis
   function refocus() {
     if (timer) return; // höchstens alle 600 ms prüfen, auch wenn sich die Seite ständig ändert
     timer = setTimeout(() => {
@@ -538,23 +689,44 @@
           openTries = 0;
           if (!opener) opener = TV.current;
           lastScope = scope;
+          consentScope = [...focusables(scope)].some((el) => CONSENT.test((el.innerText || el.value || "").trim()));
           return focus(preferred && visible(preferred) ? preferred : initial(candidates()));
         }
         lastScope = scope;
+        // Cookie-Hinweis zu: nicht zurück zum Element davor, sondern neu wählen (z. B. ins Anmeldefeld)
+        if (!scope && consentScope) {
+          consentScope = false;
+          opener = null;
+          const list = candidates();
+          if (list.length) return focus(initial(list));
+        }
         if (!scope && opener && opener.isConnected) {
           const back = opener;
           opener = null;
           return focus(back);
+        }
+        // Dialog, den die Seite selbst geöffnet hatte (z. B. Cookie-Hinweis), ist zu: neu wählen – etwa ins
+        // Anmeldefeld – statt des Nächstgelegenen
+        if (!scope && !opener) {
+          const list = candidates();
+          if (list.length) return focus(initial(list));
         }
       }
       // Solange niemand eine Taste gedrückt hat, auf das bevorzugte Element wechseln,
       // sobald es sichtbar wird (z. B. "Abspielen", wenn das Banner eingeblendet ist).
       const preferred = !pressed && TV.site.initial();
       if (preferred && preferred !== TV.current && visible(preferred)) return focus(preferred);
+      // Ebenso, wenn ein Anmeldefeld (oder „Weiter mit E-Mail“) erst nach anderen Elementen erscheint
+      if (!pressed && TV.current && !isTextInput(TV.current) && !TV.site.takeover()) {
+        const best = initial(candidates());
+        if (best && best !== TV.current && (isTextInput(best) || /mit e-?mail/i.test((best.innerText || "").trim()))) return focus(best);
+      }
       if (TV.current && TV.current.isConnected && visible(TV.current)) return;
       const list = candidates();
       if (!list.length) return;
-      if (TV.current && lastRect) return focus(nearest(list, lastRect)); // ausgetauschtes Element wiederfinden
+      // Cookie-Hinweis weggeklickt: neu wählen (z. B. ins Anmeldefeld), nicht das Nächstgelegene (oft das Logo)
+      const wasConsent = TV.current && CONSENT.test((TV.current.innerText || TV.current.value || "").trim());
+      if (TV.current && lastRect && !wasConsent) return focus(nearest(list, lastRect)); // ausgetauschtes Element wiederfinden
       focus(initial(list)); // wie in der TV-App: bevorzugtes Element statt z. B. dem Logo
     }, 600);
   }

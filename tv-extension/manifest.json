@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "RaspiTV Bedienung",
-  "version": "2.16",
+  "version": "2.17",
   "description": "Macht Streaming-Webseiten im RaspiTV-Player mit der Fernbedienung bedienbar.",
   "host_permissions": [
     "http://127.0.0.1:8765/*"
@@ -232,6 +232,43 @@
         "twitch-app.css"
       ],
       "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://www.amazon.de/ap/*",
+        "https://accounts.spotify.com/*",
+        "https://plus.rtl.de/*",
+        "https://auth.rtl.de/*",
+        "https://tv.apple.com/*",
+        "https://www.paramountplus.com/*",
+        "https://www.crunchyroll.com/*",
+        "https://sso.crunchyroll.com/*",
+        "https://www.dazn.com/*",
+        "https://app.plex.tv/*"
+      ],
+      "css": [
+        "tv.css"
+      ],
+      "js": [
+        "tv.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://idmsa.apple.com/*",
+        "https://music.apple.com/includes/commerce/authenticate*",
+        "https://tv.apple.com/includes/commerce/authenticate*",
+        "https://app.plex.tv/auth-form*"
+      ],
+      "css": [
+        "tv.css"
+      ],
+      "js": [
+        "tv.js"
+      ],
+      "run_at": "document_idle",
+      "all_frames": true
     },
     {
       "matches": [

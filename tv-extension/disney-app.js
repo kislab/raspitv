@@ -1310,7 +1310,9 @@
       const pg = t.type === "page" ? getPage(t.ref) : null;
       if (pg && !pg.rows.length && !pg.slides.length) {
         // erster Start ohne Zwischenspeicher
-        renderLoading(pg.error && !pg.loading ? "Disney+ ist gerade nicht erreichbar – versucht es gleich nochmal …" : "");
+        // Fehlermeldung erst, wenn es länger dauert (abgemeldet schickt Disney nach ein paar Sekunden selbst zur
+        // Anmeldung – bis dahin nur der Ladekreis)
+        renderLoading(pg.error && !pg.loading && performance.now() > 20000 ? "Disney+ ist gerade nicht erreichbar – versucht es gleich nochmal …" : "");
         if (pg.error) window.TVBoot?.release();
       } else if (pg) { if (V.key !== `page:${t.ref}`) buildPage(t); renderPage(t); }
       else if (t.type === "search") { if (V.key !== "search") buildSearch(t); renderSearch(t); }

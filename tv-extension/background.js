@@ -35,7 +35,13 @@ async function listen() {
   listening = false;
 }
 
-chrome.runtime.onMessage.addListener((message) => {
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  // QR-Code fürs Handy (Bildschirmtastatur): Seiten dürfen RaspiTV nicht selbst fragen, der Hintergrund schon
+  if (message.cmd === "phoneqr") {
+    fetch(`${BASE}/phone-qr`).then((r) => r.json()).then(sendResponse, () => sendResponse(null));
+    listen();
+    return true; // Antwort kommt später
+  }
   // Jede Nachricht (auch der regelmäßige "ping" der Seite) hält diesen Worker wach.
   if (message.cmd === "video") {
     fetch(`${BASE}/video`, { method: "POST", body: JSON.stringify({ fps: message.fps }) }).catch(() => {});

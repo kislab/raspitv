@@ -726,6 +726,27 @@ class Home(AccountsUI, JellyfinUI, SetupUI, QObject):
                            "qr": ["".join("1" if c else "0" for c in row) for row in matrix] if matrix else []}
         self.phone.on_paired = lambda: self.bgDone.emit(self.phone_paired)
 
+    def phone_qr(self):
+        """Für die Bildschirmtastatur im Player (Server-Thread): QR-Code, der das Handy gleich koppelt und dann
+        zum Tippen bereit ist – so meldet man sich in jeder App per Handy an. Der Code gilt 10 Minuten."""
+        if not self.phone.running() and not self.phone.start():
+            return None
+        if not self.settings["phone_remote"]:
+            self.bgDone.emit(lambda: self.set("phone_remote", True))
+        code = self.phone.code or self.phone.new_code()
+        if not self.phone_pair:
+            self.phone.on_paired = lambda: self.bgDone.emit(
+                lambda: self.show_toast("Handy verbunden – jetzt auf dem Handy tippen", 6))
+
+            def expire(c=code):
+                if self.phone.code == c and not self.phone_pair:
+                    self.phone.code = self.phone.on_paired = None
+            threading.Timer(600, expire).start()
+        url = f"http://{cfg.ip_address()}:{phone.PORT}/#p={code}"
+        matrix = phone.qr_matrix(url)
+        return {"url": f"{cfg.ip_address()}:{phone.PORT}", "code": code,
+                "qr": ["".join("1" if c else "0" for c in row) for row in matrix] if matrix else []}
+
     def close_phone_pair(self):
         self.phone_pair = None
         self.phone.code = self.phone.on_paired = None
@@ -1419,7 +1440,7 @@ def main():
         home.key.emit(key)
 
     try:
-        remote.start(on_key, player.running, home.video_rate)
+        remote.start(on_key, player.running, home.video_rate, home.phone_qr)
     except OSError:
         sys.exit("RaspiTV läuft bereits (Port 8765 ist belegt).")
     # Bluetooth-Fernbedienungen direkt lesen (auch während der Player vorne liegt)

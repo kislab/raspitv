@@ -62,6 +62,13 @@ Mediacenter für den Raspberry Pi 4 im Stil von Google TV – bedienbar mit der 
   Gekoppelte Handys stehen in den Geräte-Einstellungen; „Verbundene Handys entfernen“ sperrt alle wieder aus.
   Jede Bildschirmtastatur (RaspiTV und `tv.js`) hat rechts unten eine **Handy-Taste**: zeigt, wo man auf dem Handy
   tippt; ist in RaspiTV noch kein Handy gekoppelt, öffnet sie gleich „Handy verbinden“ (die Tastatur bleibt offen).
+- **Anmelden in den Apps** (`tv.js`): Die Bildschirmtastatur im Player zeigt rechts einen **QR-Code** – scannen koppelt
+  das Handy sofort (Code 10 Minuten gültig, `GET /phone-qr` in `remote.py`) und öffnet das Textfeld zum Tippen.
+  „Senden“ am Handy springt von E-Mail ins Passwortfeld und schickt danach die Anmeldung ab. Die Bedienung läuft
+  auch auf den Anmeldeseiten anderer Adressen (Amazon, Spotify-Konto, RTL+, Paramount+, Crunchyroll, DAZN, Plex)
+  und in eingebetteten Anmeldefenstern (Apple-ID bei Apple Music/TV+, Plex) – die Tastatur erscheint dann groß im
+  Hauptfenster. Cookie-Hinweise: zuerst ist „Ablehnen“ bzw. „Nur notwendige“ gewählt, danach das Anmeldefeld.
+  YouTube meldet sich über seinen eigenen QR-Code an, Jellyfin per Quick Connect; die Mediatheken brauchen keine Anmeldung.
 - **Mauszeiger**: Fensterregeln in `~/.config/labwc/rc.xml` (`HideCursor` für Chromium und mpv, von `settings.py`
   zusammen mit der Startbild-Regel verwaltet) blenden ihn aus, sobald Player oder Jellyfin-Wiedergabe aufgehen.
   Der QR-Code kommt aus `libqrencode` (über ctypes, Paket `libqrencode4`).

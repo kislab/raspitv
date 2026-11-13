@@ -7,6 +7,8 @@ Jede Tastenquelle – HDMI-CEC, Infrarot-Empfänger, Handy-App – schickt Taste
   GET  /status   -> {"running": "<id>" | null}
   GET  /events   Tasten als Server-Sent Events; darüber steuert die TV-Erweiterung
                  (tv-extension/) die Webseite im Player.
+  GET  /phone-qr QR-Code zum Koppeln des Handys (Bildschirmtastatur im Player: Anmelden per Handy)
+                 -> {"url", "qr": ["0101…", …]}  – nur für die TV-Erweiterung
 
 Beispiel:  curl -d '{"key":"home"}' http://127.0.0.1:8765/key
 """
@@ -28,7 +30,7 @@ def notify(message):
     """Nachricht an die TV-Erweiterung (z. B. "volume:45:0" für die Lautstärke-Anzeige); von start() ersetzt."""
 
 
-def start(on_key, get_status, on_video=None):
+def start(on_key, get_status, on_video=None, on_phone_qr=None):
     """Startet den Server in einem Hintergrund-Thread. on_key wird dort aufgerufen.
 
     Danach nimmt `remote.press(key)` Tasten direkt angeschlossener Fernbedienungen an (remote_input.py):
@@ -63,6 +65,11 @@ def start(on_key, get_status, on_video=None):
                 self.reply({"running": get_status()})
             elif self.path == "/events":
                 self.stream()
+            elif self.path == "/phone-qr" and on_phone_qr:
+                origin = self.headers.get("Origin")
+                if origin and not origin.startswith("chrome-extension://"):
+                    return self.reply({"error": "forbidden"}, 403)
+                self.reply(on_phone_qr() or {"error": "phone off"})
             else:
                 self.reply({"error": "not found"}, 404)
 
