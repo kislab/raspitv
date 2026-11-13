@@ -95,7 +95,11 @@
     },
     async search(term) {
       const d = await get(`https://service-media-search.clusters.pluto.tv/v1/search?q=${encodeURIComponent(term)}&limit=60`);
-      const items = (d.data || []).map((x) => vodItem({ ...x, _id: x.id, covers: x.covers || [] })).filter(Boolean);
+      const hits = (d.data || []).filter((x) => x.type === "movie" || x.type === "series");
+      // Suchtreffer haben keine Bilder: vollständige Angaben in einem Rutsch nachladen
+      const full = hits.length ? await get(`${VOD}/v4/vod/items?ids=${hits.map((x) => x.id).join(",")}`).catch(() => []) : [];
+      const byId = new Map((Array.isArray(full) ? full : []).map((x) => [x._id || x.id, x]));
+      const items = hits.map((x) => vodItem({ ...x, ...(byId.get(x.id) || {}), _id: x.id })).filter(Boolean);
       return { sections: [{ title: "Ergebnisse", layout: "wide", items }] };
     },
     async open(it) {
