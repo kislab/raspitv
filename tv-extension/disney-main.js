@@ -1,5 +1,5 @@
 // Läuft im Kontext der Disney+-Seite (nicht der Erweiterung), weil nur dort Disneys eigene
-// Eingabe-Handler erreichbar sind. Empfängt die PIN von disney-tv.js.
+// Eingabe-Handler erreichbar sind. Empfängt die PIN von disney-app.js.
 (() => {
   // Disneys PIN-Felder nehmen weder gesetzte Werte noch nachgebaute Tastendrücke an,
   // wohl aber "Einfügen" einer ganzen PIN – genau das wird hier ausgelöst.

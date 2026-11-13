@@ -1,6 +1,6 @@
 [
   {"id": "netflix", "name": "NETFLIX", "tag": "Streaming", "desc": "Filme, Serien und Netflix Originals", "url": "https://www.netflix.com/browse", "bg": ["#000000", "#16090a"], "fg": "#e50914", "accent": "#e50914"},
-  {"id": "disney", "name": "Disney+", "tag": "Streaming", "desc": "Disney, Pixar, Marvel, Star Wars und mehr", "url": "https://www.disneyplus.com/home", "bg": ["#071a3a", "#0f5f7a"], "fg": "#ffffff", "accent": "#1fb6c9", "tint": "#ffffff"},
+  {"id": "disney", "name": "Disney+", "tag": "Streaming", "desc": "Disney, Pixar, Marvel, Star Wars und mehr", "url": "https://www.disneyplus.com/de-de/home", "bg": ["#071a3a", "#0f5f7a"], "fg": "#ffffff", "accent": "#1fb6c9", "tint": "#ffffff"},
   {"id": "youtube", "name": "YouTube", "tag": "Videos", "desc": "Videos, Musik und Livestreams", "url": "https://www.youtube.com/tv", "bg": ["#ffffff"], "fg": "#ff0033", "accent": "#ff0033", "hero_bg": ["#161616", "#2b1114"], "ua": "tv"},
   {"id": "prime", "name": "prime video", "tag": "Streaming", "desc": "Filme, Serien und Sport von Amazon", "url": "https://www.primevideo.com/-/de/storefront", "bg": ["#0a56c2", "#1a98ff"], "fg": "#ffffff", "accent": "#1a98ff", "tint": "#ffffff"},
   {"id": "twitch", "name": "Twitch", "tag": "Live", "desc": "Livestreams aus Gaming und Unterhaltung", "url": "https://www.twitch.tv/directory", "scale": 1.25, "bg": ["#772ce8", "#9146ff"], "fg": "#ffffff", "accent": "#9146ff"},

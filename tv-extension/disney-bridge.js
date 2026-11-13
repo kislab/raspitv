@@ -33,12 +33,33 @@
       remember(url, init?.headers);
       if (input instanceof Request) remember(url, input.headers);
     } catch (e) { /* nie die Seite stören */ }
-    return origFetch.apply(this, arguments);
+    const result = origFetch.apply(this, arguments);
+    // aktives Profil (Name, Bild) aus Disneys „me“-Abfrage merken – für die Profilanzeige der Oberfläche
+    try {
+      const url = typeof input === "string" ? input : input?.url || "";
+      if (/graphql\?op=me\b|graphql\?op=(switchProfile|updateProfile)/.test(url)) {
+        result.then((r) => r.clone().json()).then((d) => { me = d; }).catch(() => {});
+      }
+    } catch (e) { /* egal */ }
+    return result;
   };
+  let me = null;
+  /** Aktives Profil aus der zuletzt gesehenen Antwort (ohne Schlüssel oder Konto-Daten) */
+  function profile() {
+    const p = me?.data?.me?.account?.activeProfile || me?.data?.switchProfile?.account?.activeProfile || null;
+    if (!p) return null;
+    const pic = (x) => { const u = x?.avatar?.images?.[0]?.url || ""; return u ? `${u}/scale?width=200&format=png` : ""; };
+    const all = me?.data?.me?.account?.profiles || [];
+    return { id: p.id || "", name: p.name || "", img: pic(p),
+      profiles: all.map((x) => ({ id: x.id, name: x.name || "", img: pic(x), pin: !!x.attributes?.parentalControls?.isPinProtected })) };
+  }
   const origOpen = XMLHttpRequest.prototype.open;
   const origSet = XMLHttpRequest.prototype.setRequestHeader;
   XMLHttpRequest.prototype.open = function (method, url) {
     this.__tvdpUrl = String(url);
+    if (/graphql\?op=(me|switchProfile|updateProfile)\b/.test(this.__tvdpUrl)) {
+      this.addEventListener("load", () => { try { me = JSON.parse(this.responseText); } catch (e) { /* egal */ } });
+    }
     return origOpen.apply(this, arguments);
   };
   XMLHttpRequest.prototype.setRequestHeader = function (name, value) {
@@ -109,6 +130,7 @@
     hidden: async ({ on }) => setHidden(on),
     navigate: async ({ path }) => navigate(path),
     ready: async () => ({ ready: !!auth }),
+    profile: async () => profile(),
     seen: async () => seen.map((u) => u.replace(/^https:\/\/[^/]+/, "")),
     get: ({ url }) => get(url),
   };

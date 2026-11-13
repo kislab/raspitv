@@ -1,0 +1,239 @@
+/* Disney+ – eigene Oberfläche (disney-app.js). 1 --u = 10 px bei 1920 × 1080.
+   Auf den Pi abgestimmt: bewegt wird nur über transform/opacity auf eigenen Ebenen (GPU), keine weichen Schatten,
+   keine Filter, kein Neuzeichnen großer Flächen beim Blättern. */
+
+/* Disney-Seite unsichtbar (opacity statt visibility: Disneys Logik und Fokusfallen bleiben intakt) … */
+html.dpa-on body { opacity: 0 !important; pointer-events: none !important; }
+html.dpa-on { overflow: hidden !important; background: #0e1118 !important; }
+/* … und solange sie nur Daten liefert, gar nicht berechnen und ihre Animationen anhalten */
+html.dpa-sleep body { content-visibility: hidden !important; }
+html.dpa-sleep body * { animation-play-state: paused !important; transition: none !important; }
+
+#dpa { display: none; }
+html.dpa-on #dpa { display: block; }
+#dpa {
+  --u: calc(100vw / 192);
+  --pad: calc(var(--u) * 14);
+  position: fixed;
+  inset: 0;
+  z-index: 2147483000;
+  overflow: hidden;
+  contain: strict;
+  background: #0e1118;
+  color: #f9f9f9;
+  font-family: "Inspire", "Avenir Next", "Nunito Sans", "Helvetica Neue", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  cursor: none;
+}
+#dpa * { box-sizing: border-box; }
+#dpa img { display: block; }
+
+/* ---------- Hintergrund: zwei Bilder auf eigenen Ebenen, Überblenden nur über opacity ---------- */
+.dpa-bg {
+  position: absolute; right: 0; top: 0; width: 78%; height: 82%;
+  object-fit: cover; opacity: 0; will-change: opacity; transition: opacity 0.45s ease;
+}
+.dpa-bg.dpa-show { opacity: 1; }
+.dpa-shade {
+  position: absolute; inset: 0; will-change: transform;
+  background:
+    linear-gradient(to right, #0e1118 22%, rgba(14, 17, 24, 0.8) 38%, rgba(14, 17, 24, 0) 64%),
+    linear-gradient(to top, #0e1118 18%, rgba(14, 17, 24, 0.75) 32%, rgba(14, 17, 24, 0) 56%);
+}
+
+/* ---------- Linke Leiste ---------- */
+.dpa-rail { position: absolute; left: 0; top: 0; bottom: 0; width: calc(var(--u) * 34); z-index: 5; pointer-events: none; }
+.dpa-rail-bg {
+  position: absolute; inset: 0; opacity: 0; will-change: opacity; transition: opacity 0.2s;
+  background: linear-gradient(to right, #0e1118 55%, rgba(14, 17, 24, 0.92) 78%, rgba(14, 17, 24, 0));
+}
+.dpa-rail-open .dpa-rail-bg { opacity: 1; }
+.dpa-rail-items { position: absolute; left: calc(var(--u) * 3.4); top: 50%; transform: translateY(-50%); }
+.dpa-rail-item {
+  display: flex; align-items: center; gap: calc(var(--u) * 2.4);
+  height: calc(var(--u) * 6); color: #a8a9ad; font-size: calc(var(--u) * 2.2); font-weight: 600; white-space: nowrap;
+}
+.dpa-rail-item.dpa-active { color: #f9f9f9; }
+.dpa-rail-label { opacity: 0; transition: opacity 0.2s; }
+.dpa-rail-open .dpa-rail-label { opacity: 1; }
+.dpa-rail-open .dpa-rail-item.dpa-on { color: #f9f9f9; }
+.dpa-rail-open .dpa-rail-item.dpa-on .dpa-rail-label { text-decoration: underline; text-underline-offset: calc(var(--u) * 0.8); text-decoration-thickness: calc(var(--u) * 0.3); }
+.dpa-icon { display: inline-flex; width: calc(var(--u) * 3); height: calc(var(--u) * 3); flex: none; }
+.dpa-icon svg { width: 100%; height: 100%; }
+.dpa-wordmark { font-size: calc(var(--u) * 3); font-weight: 800; letter-spacing: -0.02em; }
+
+/* ---------- Seite (Startseite, Filme, Serien, Suche …) ---------- */
+.dpa-view { position: absolute; inset: 0; }
+.dpa-head { position: absolute; left: var(--pad); top: calc(var(--u) * 16); width: calc(var(--u) * 80); transition: opacity 0.25s; }
+.dpa-logo { max-width: calc(var(--u) * 56); max-height: calc(var(--u) * 17); object-fit: contain; object-position: left bottom; margin-bottom: calc(var(--u) * 2.4); }
+.dpa-title { font-size: calc(var(--u) * 5); font-weight: 700; line-height: 1.1; margin-bottom: calc(var(--u) * 1.6); }
+.dpa-title.dpa-small { font-size: calc(var(--u) * 3.8); }
+.dpa-meta { font-size: calc(var(--u) * 2); color: #cacaca; margin-bottom: calc(var(--u) * 1.4); }
+.dpa-desc {
+  font-size: calc(var(--u) * 2); line-height: 1.4; color: #e6e6e6; max-width: calc(var(--u) * 74);
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+}
+.dpa-dots { display: flex; gap: calc(var(--u) * 1); margin-top: calc(var(--u) * 2.4); }
+.dpa-dot { width: calc(var(--u) * 0.9); height: calc(var(--u) * 0.9); border-radius: 50%; background: rgba(255, 255, 255, 0.3); }
+.dpa-dot.dpa-on { background: #f9f9f9; }
+.dpa-zone-rows .dpa-head-hero, .dpa-zone-field .dpa-head-hero { opacity: 0; }
+.dpa-head-info { opacity: 0; top: calc(var(--u) * 10); }
+.dpa-zone-rows .dpa-head-info { opacity: 1; }
+
+/* Knöpfe */
+.dpa-btns { display: flex; gap: calc(var(--u) * 1.6); margin-top: calc(var(--u) * 3); }
+.dpa-btn {
+  display: inline-flex; align-items: center; gap: calc(var(--u) * 1.2);
+  height: calc(var(--u) * 6); padding: 0 calc(var(--u) * 3.2);
+  border-radius: calc(var(--u) * 0.6); background: rgba(255, 255, 255, 0.16);
+  font-size: calc(var(--u) * 1.9); font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; white-space: nowrap;
+  transition: transform 0.15s ease-out;
+}
+.dpa-btn .dpa-icon { width: calc(var(--u) * 2.6); height: calc(var(--u) * 2.6); }
+.dpa-btn.dpa-round { width: calc(var(--u) * 6); padding: 0; justify-content: center; border-radius: 50%; }
+.dpa-btn.dpa-on { background: #f9f9f9; color: #0e1118; transform: scale(1.06); }
+
+/* Reihen: nur die in Sichtweite stehen im DOM; Reihen-Ebene und jede Spur auf eigener GPU-Ebene */
+.dpa-rows {
+  position: absolute; left: var(--pad); right: 0; top: 0;
+  will-change: transform; transition: transform 0.32s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+.dpa-row { position: absolute; left: 0; right: 0; }
+.dpa-row-title { height: calc(var(--u) * 4.4); font-size: calc(var(--u) * 2.2); font-weight: 600; color: #e6e6e6; white-space: nowrap; }
+.dpa-track { position: relative; will-change: transform; transition: transform 0.26s cubic-bezier(0.2, 0.7, 0.2, 1); }
+.dpa-card {
+  position: absolute; top: 0; width: calc(var(--u) * 32); height: calc(var(--u) * 18);
+  border-radius: calc(var(--u) * 0.7); background: #1d2130; transition: transform 0.16s ease-out;
+}
+.dpa-tall .dpa-card { width: calc(var(--u) * 19); height: calc(var(--u) * 28.5); }
+.dpa-card img { width: 100%; height: 100%; object-fit: cover; border-radius: inherit; opacity: 0; transition: opacity 0.3s; }
+.dpa-card img.dpa-ld { opacity: 1; }
+.dpa-card-name {
+  position: absolute; inset: auto calc(var(--u) * 1.2) calc(var(--u) * 1.2); font-size: calc(var(--u) * 1.8); font-weight: 700;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.dpa-card img.dpa-ld + .dpa-card-name { display: none; }
+.dpa-card.dpa-on { transform: scale(1.07); z-index: 1; }
+.dpa-card.dpa-on::after {
+  content: ""; position: absolute; inset: calc(var(--u) * -0.5);
+  border: calc(var(--u) * 0.3) solid #f9f9f9; border-radius: calc(var(--u) * 1.1);
+}
+.dpa-progress { position: absolute; left: calc(var(--u) * 1.2); right: calc(var(--u) * 1.2); bottom: calc(var(--u) * 1.2); height: calc(var(--u) * 0.5); border-radius: 99px; background: rgba(255, 255, 255, 0.3); overflow: hidden; }
+.dpa-progress div { height: 100%; background: #f9f9f9; border-radius: 99px; }
+.dpa-empty { position: absolute; left: var(--pad); top: calc(var(--u) * 50); font-size: calc(var(--u) * 2.4); color: #a8a9ad; }
+
+/* Suche */
+.dpa-field {
+  position: absolute; left: var(--pad); top: calc(var(--u) * 8); width: calc(var(--u) * 100); height: calc(var(--u) * 7.4);
+  display: flex; align-items: center; gap: calc(var(--u) * 2); padding: 0 calc(var(--u) * 2.6);
+  border-radius: calc(var(--u) * 0.6); background: rgba(255, 255, 255, 0.1); font-size: calc(var(--u) * 2.6); color: #a8a9ad;
+  border: calc(var(--u) * 0.3) solid transparent;
+}
+.dpa-field.dpa-filled { color: #f9f9f9; }
+.dpa-field.dpa-on { border-color: #f9f9f9; background: rgba(255, 255, 255, 0.16); }
+.dpa-field input { position: absolute; opacity: 0; pointer-events: none; width: 1px; }
+
+/* ---------- Detailseite ---------- */
+.dpa-detail .dpa-head { top: calc(var(--u) * 10); }
+.dpa-tabs { position: absolute; left: var(--pad); top: calc(var(--u) * 62); display: flex; gap: calc(var(--u) * 4.4); }
+.dpa-tab { padding-bottom: calc(var(--u) * 0.9); font-size: calc(var(--u) * 2.2); font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #a8a9ad; border-bottom: calc(var(--u) * 0.35) solid transparent; }
+.dpa-tab.dpa-active { color: #f9f9f9; border-bottom-color: #f9f9f9; }
+.dpa-tab.dpa-on { color: #0e1118; background: #f9f9f9; border-radius: calc(var(--u) * 0.5); padding: calc(var(--u) * 0.5) calc(var(--u) * 1.4); margin: calc(var(--u) * -0.5) calc(var(--u) * -1.4); }
+.dpa-seasons { position: absolute; left: var(--pad); top: calc(var(--u) * 68.5); display: flex; gap: calc(var(--u) * 1.2); }
+.dpa-season { padding: calc(var(--u) * 0.8) calc(var(--u) * 1.8); border-radius: 99px; font-size: calc(var(--u) * 1.8); font-weight: 600; color: #a8a9ad; background: rgba(255, 255, 255, 0.08); white-space: nowrap; }
+.dpa-season.dpa-active { color: #f9f9f9; background: rgba(255, 255, 255, 0.22); }
+.dpa-season.dpa-on { color: #0e1118; background: #f9f9f9; }
+.dpa-items { position: absolute; left: var(--pad); right: 0; top: calc(var(--u) * 69); }
+.dpa-items.dpa-with-seasons { top: calc(var(--u) * 75.5); }
+.dpa-ep { position: absolute; top: 0; width: calc(var(--u) * 32); }
+.dpa-ep-pic { position: relative; height: calc(var(--u) * 18); border-radius: calc(var(--u) * 0.7); background: #1d2130; transition: transform 0.16s ease-out; }
+.dpa-ep-pic img { width: 100%; height: 100%; object-fit: cover; border-radius: inherit; opacity: 0; transition: opacity 0.3s; }
+.dpa-ep-pic img.dpa-ld { opacity: 1; }
+.dpa-ep.dpa-on .dpa-ep-pic { transform: scale(1.05); }
+.dpa-ep.dpa-on .dpa-ep-pic::after { content: ""; position: absolute; inset: calc(var(--u) * -0.5); border: calc(var(--u) * 0.3) solid #f9f9f9; border-radius: calc(var(--u) * 1.1); }
+.dpa-ep-title { margin-top: calc(var(--u) * 1.4); font-size: calc(var(--u) * 1.9); font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dpa-ep-meta { margin-top: calc(var(--u) * 0.4); font-size: calc(var(--u) * 1.6); color: #a8a9ad; }
+.dpa-ep-desc { margin-top: calc(var(--u) * 0.6); font-size: calc(var(--u) * 1.6); line-height: 1.35; color: #cacaca; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; opacity: 0; }
+.dpa-ep.dpa-on .dpa-ep-desc { opacity: 1; }
+.dpa-text { position: absolute; left: var(--pad); top: calc(var(--u) * 69); width: calc(var(--u) * 120); font-size: calc(var(--u) * 1.9); line-height: 1.5; color: #cacaca; white-space: pre-line; }
+
+/* ---------- Laden ---------- */
+.dpa-loading { position: absolute; inset: 0; display: grid; place-items: center; }
+.dpa-spinner {
+  width: calc(var(--u) * 5.6); height: calc(var(--u) * 5.6); border-radius: 50%;
+  border: calc(var(--u) * 0.5) solid rgba(255, 255, 255, 0.15); border-top-color: #0072d2;
+  animation: dpa-spin 0.9s linear infinite;
+}
+@keyframes dpa-spin { to { transform: rotate(360deg); } }
+.dpa-message { position: absolute; left: 0; right: 0; top: 60%; text-align: center; font-size: calc(var(--u) * 2.2); color: #a8a9ad; }
+
+/* ---------- Profile ---------- */
+.dpa-profiles { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; background: linear-gradient(160deg, #23263a 0%, #1a1d29 45%, #13151f 100%); }
+.dpa-profiles h1 { margin: 0 0 calc(var(--u) * 6); font-size: calc(var(--u) * 4); font-weight: 600; }
+.dpa-profiles .dpa-wordmark { position: absolute; top: calc(var(--u) * 5); }
+.dpa-profile-row { display: flex; gap: calc(var(--u) * 4); }
+.dpa-profile { position: relative; display: flex; flex-direction: column; align-items: center; width: calc(var(--u) * 17); }
+.dpa-avatar { width: calc(var(--u) * 15); height: calc(var(--u) * 15); border-radius: 50%; background: #2b3045; transition: transform 0.18s ease-out; }
+.dpa-avatar img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; opacity: 0; transition: opacity 0.3s; }
+.dpa-avatar img.dpa-ld { opacity: 1; }
+.dpa-profile.dpa-on .dpa-avatar { transform: scale(1.1); box-shadow: 0 0 0 calc(var(--u) * 0.45) #f9f9f9; }
+.dpa-profile-name { margin-top: calc(var(--u) * 2.2); font-size: calc(var(--u) * 2.2); color: #a8a9ad; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.dpa-profile.dpa-on .dpa-profile-name { color: #f9f9f9; }
+.dpa-lock { position: absolute; top: calc(var(--u) * 11.4); right: calc(var(--u) * 1.4); width: calc(var(--u) * 3.4); height: calc(var(--u) * 3.4); padding: calc(var(--u) * 0.7); border-radius: 50%; background: #0e1118; color: #f9f9f9; }
+
+/* ---------- PIN ---------- */
+.dpa-pin { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; background: linear-gradient(160deg, #23263a 0%, #1a1d29 45%, #13151f 100%); }
+.dpa-pin-head { display: flex; align-items: center; gap: calc(var(--u) * 2); margin-bottom: calc(var(--u) * 4); }
+.dpa-pin-head .dpa-avatar { width: calc(var(--u) * 7); height: calc(var(--u) * 7); }
+.dpa-pin-name { font-size: calc(var(--u) * 2.6); font-weight: 600; }
+.dpa-pin h1 { margin: 0 0 calc(var(--u) * 4); font-size: calc(var(--u) * 3.4); font-weight: 600; }
+.dpa-pin-boxes { display: flex; gap: calc(var(--u) * 2); }
+.dpa-pin-box { position: relative; width: calc(var(--u) * 8); height: calc(var(--u) * 9.5); border-radius: calc(var(--u) * 0.8); background: rgba(255, 255, 255, 0.1); border: calc(var(--u) * 0.25) solid transparent; }
+.dpa-pin-box.dpa-current { border-color: #f9f9f9; background: rgba(255, 255, 255, 0.16); }
+.dpa-pin-box.dpa-filled::after { content: ""; position: absolute; left: 50%; top: 50%; width: calc(var(--u) * 1.6); height: calc(var(--u) * 1.6); margin: calc(var(--u) * -0.8) 0 0 calc(var(--u) * -0.8); border-radius: 50%; background: #f9f9f9; }
+.dpa-pin-error { height: calc(var(--u) * 4); margin-top: calc(var(--u) * 1.4); font-size: calc(var(--u) * 2); color: #ff6b6b; }
+.dpa-pin-pad { display: flex; gap: calc(var(--u) * 1); margin-top: calc(var(--u) * 1); }
+.dpa-pin-key { width: calc(var(--u) * 7); height: calc(var(--u) * 7); display: grid; place-items: center; border-radius: calc(var(--u) * 0.8); background: rgba(255, 255, 255, 0.08); font-size: calc(var(--u) * 2.8); font-weight: 600; color: #cacaca; transition: transform 0.15s; }
+.dpa-pin-key.dpa-del { width: calc(var(--u) * 9); font-size: calc(var(--u) * 2.4); }
+.dpa-pin-key.dpa-on { background: #f9f9f9; color: #13151f; transform: scale(1.12); }
+.dpa-pin-actions { display: flex; gap: calc(var(--u) * 2); margin-top: calc(var(--u) * 5); }
+.dpa-pin-action { padding: calc(var(--u) * 1.4) calc(var(--u) * 3.4); border-radius: calc(var(--u) * 0.6); background: rgba(255, 255, 255, 0.12); font-size: calc(var(--u) * 1.8); font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+.dpa-pin-action.dpa-on { background: #f9f9f9; color: #13151f; }
+
+/* ---------- Player ---------- */
+/* Disneys eigene Bedienteile unsichtbar (Untertitel, Altersfreigabe und Werbe-Hinweise bleiben) – bedient wird über
+   die eigene Leiste. opacity statt display: Disneys Logik und „Überspringen“ laufen weiter. */
+html.tv-disney main-app-controls-overlay, html.tv-disney title-overlay, html.tv-disney pivot-tray-overlay,
+html.tv-disney skip-overlay, html.tv-disney up-next-lite, html.tv-disney inactivity-overlay {
+  opacity: 0 !important; pointer-events: none !important;
+}
+html.tv-disney #tv-player-bar, html.tv-disney #tv-skip { font-family: "Inspire", "Avenir Next", "Nunito Sans", Arial, sans-serif; }
+html.tv-disney #tv-player-bar .tv-pb-fill { background: #fff; }
+html.tv-disney #tv-player-bar .tv-pb-knob { background: #fff; box-shadow: 0 0 0 calc(var(--u) * 0.4) rgba(255, 255, 255, 0.3); }
+html.tv-disney #tv-player-bar .tv-pb-icon { background: #fff; color: #0e0b14; }
+
+/* Profil oben links in der Leiste */
+.dpa-rail-profile { position: absolute; left: calc(var(--u) * 2.4); top: calc(var(--u) * 4); height: calc(var(--u) * 7); pointer-events: auto; }
+.dpa-rail-avatar { width: calc(var(--u) * 5); height: calc(var(--u) * 5); flex: none; border-radius: 50%; background: #2b3045; transition: transform 0.15s; }
+.dpa-rail-avatar img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; opacity: 0; transition: opacity 0.3s; }
+.dpa-rail-avatar img.dpa-ld { opacity: 1; }
+.dpa-rail-profile .dpa-rail-label { display: flex; flex-direction: column; }
+.dpa-rail-name { font-size: calc(var(--u) * 2.2); font-weight: 700; color: #f9f9f9; }
+.dpa-rail-sub { font-size: calc(var(--u) * 1.6); font-weight: 500; color: #a8a9ad; }
+.dpa-rail-open .dpa-rail-profile.dpa-on .dpa-rail-avatar { transform: scale(1.12); box-shadow: 0 0 0 calc(var(--u) * 0.35) #f9f9f9; }
+.dpa-rail-open .dpa-rail-profile.dpa-on .dpa-rail-label { text-decoration: none; }
+
+/* Reihen links sauber abschneiden: Karten, über die schon geblättert wurde, verschwinden am linken Rand statt
+   halb unter der Leiste zu hängen (Rand 1.6 --u bleibt für Rahmen und Vergrößerung der gewählten Karte) */
+.dpa-row, .dpa-items { overflow: hidden; margin-left: calc(var(--u) * -1.6); padding-left: calc(var(--u) * 1.6); }
+.dpa-row { height: calc(var(--u) * 27); }
+.dpa-row.dpa-tall { height: calc(var(--u) * 37.5); }
+.dpa-items { height: calc(var(--u) * 34); padding-top: calc(var(--u) * 1.2); margin-top: calc(var(--u) * -1.2); }
+.dpa-row { transition: opacity 0.2s; }
+.dpa-row.dpa-gone { opacity: 0; }
+
+/* Nur ein Ladekreis: solange der Startschutz (boot.js) seinen zeigt, den eigenen weglassen */
+html.tv-boot .dpa-spinner { visibility: hidden; }
+/* Logo hat festen Platz: kein Springen des Textes, wenn es nachlädt */
+.dpa-logo { width: calc(var(--u) * 56); height: calc(var(--u) * 17); max-width: none; max-height: none; opacity: 0; transition: opacity 0.3s; }
+.dpa-logo.dpa-ld { opacity: 1; }
