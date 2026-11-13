@@ -3,7 +3,8 @@
 
 html.tvm-app, html.tvm-app body { margin: 0; overflow: hidden; background: #0d0f14 !important; cursor: none; }
 /* Inhalt der eigentlichen Webseite (ohne ihre Skripte nur ein Gerüst) nicht zeichnen */
-html.tvm-app body > :not(.tvm):not(.tvm-player):not(.tvm-video) { display: none !important; }
+html.tvm-app:not(.tvm-pageplay) body > :not(.tvm):not(.tvm-player):not(.tvm-video) { display: none !important; }
+html.tvm-pageplay, html.tvm-pageplay body { overflow: hidden; }
 html.tvm-app #tv-ring { display: none !important; }
 
 .tvm {

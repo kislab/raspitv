@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "RaspiTV Bedienung",
-  "version": "2.12",
+  "version": "2.14",
   "description": "Macht Streaming-Webseiten im RaspiTV-Player mit der Fernbedienung bedienbar.",
   "host_permissions": [
     "http://127.0.0.1:8765/*"
@@ -187,7 +187,8 @@
         "https://www.zdf.de/*",
         "https://www.3sat.de/*",
         "https://www.arte.tv/*",
-        "https://pluto.tv/*"
+        "https://pluto.tv/*",
+        "https://www.joyn.de/*"
       ],
       "js": [
         "phone-text.js"
@@ -295,6 +296,32 @@
         "vendor/hls.min.js",
         "media-app.js",
         "pluto-app.js"
+      ],
+      "css": [
+        "tv.css",
+        "media-app.css"
+      ],
+      "run_at": "document_start"
+    },
+    {
+      "matches": [
+        "https://www.joyn.de/*"
+      ],
+      "js": [
+        "joyn-bridge.js"
+      ],
+      "world": "MAIN",
+      "run_at": "document_start"
+    },
+    {
+      "matches": [
+        "https://www.joyn.de/*"
+      ],
+      "js": [
+        "media-boot.js",
+        "tv.js",
+        "media-app.js",
+        "joyn-app.js"
       ],
       "css": [
         "tv.css",

@@ -8,6 +8,7 @@
 //   search(term) → {sections}
 //   open(item) → {title, sub, meta[], desc, img, play?: item, sections}   Detailseite
 //   stream(item) → {url, type: "mp4"|"hls", live?, subtitles?}            zum Abspielen
+//   oder (kopiergeschützte Dienste) watch(item) / unwatch() / video(): Player der Anbieter-Seite zeigen
 // Abschnitt: {title, layout: "wide"|"poster"|"live", items, more?: async () => items}
 // Eintrag:   {id, kind: "video"|"live"|"show"|"page", title, sub, meta, img, poster, duration, desc, play?}
 //            play: true → OK spielt sofort ab, sonst öffnet OK die Detailseite
@@ -325,8 +326,18 @@
   let watching = null; // {item, video, hls, bar}
   let barUntil = 0, tick = null;
 
+  // Seiten-Player: Video läuft im Player der Anbieter-Seite (Kopierschutz); RaspiTV blendet sich nur aus
+  function pagePlay(it) {
+    if (page) page.restore = TV.current && root.contains(TV.current) ? TV.current : page.restore;
+    root.classList.add("tvm--hidden");
+    document.documentElement.classList.add("tvm-pageplay");
+    watching = { item: it, page: true, live: it.kind === "live" };
+    Promise.resolve(A.watch(it)).catch(() => {});
+  }
+
   async function play(it, from) {
     if (watching) stopPlayer();
+    if (A.watch) return pagePlay(it);
     if (page) page.restore = TV.current && root.contains(TV.current) ? TV.current : page.restore;
     const box = el("div", "tvm-player");
     const video = el("video", "tvm-video");
@@ -440,6 +451,14 @@
     if (!watching) return;
     const w = watching;
     watching = null;
+    if (w.page) {
+      Promise.resolve(A.unwatch?.()).catch(() => {});
+      document.documentElement.classList.remove("tvm-pageplay");
+      root.classList.remove("tvm--hidden");
+      const back = page?.restore;
+      if (back && back.isConnected) { reveal(back); TV.focus(back); }
+      return;
+    }
     clearInterval(tick);
     if (!w.live && w.video.currentTime) remember(w.item, w.video.currentTime, w.video.duration);
     try { w.hls?.destroy(); } catch (e) { /* egal */ }
@@ -455,6 +474,15 @@
 
   function playerKey(key) {
     if (!watching) return false;
+    if (watching.page) {
+      if (key === "back") return stopPlayer(), true;
+      if (A.playerKey && A.playerKey(key)) return true;
+      const v = A.video?.();
+      if (!v) return true;
+      if (key === "ok") { if (v.paused) v.play().catch(() => {}); else v.pause(); }
+      else if (!watching.live && (key === "left" || key === "right")) v.currentTime = Math.max(0, v.currentTime + (key === "left" ? -10 : 10));
+      return true;
+    }
     const v = watching.video;
     if (key === "back") return stopPlayer(), true;
     if (key === "ok") {
