@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "RaspiTV Bedienung",
-  "version": "2.15",
+  "version": "2.16",
   "description": "Macht Streaming-Webseiten im RaspiTV-Player mit der Fernbedienung bedienbar.",
   "host_permissions": [
     "http://127.0.0.1:8765/*"
@@ -338,6 +338,11 @@
         "id": "media",
         "enabled": true,
         "path": "media-rules.json"
+      },
+      {
+        "id": "disney",
+        "enabled": true,
+        "path": "disney-rules.json"
       }
     ]
   }

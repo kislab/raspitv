@@ -100,12 +100,37 @@
   function ready() {
     readyP = readyP || (async () => {
       for (let i = 0; i < 160; i++) {
-        if ((await bridge("ready").catch(() => ({}))).ready) { S.authed = true; changed(); return; }
+        if ((await bridge("ready").catch(() => ({}))).ready) {
+          await expected();
+          S.authed = true;
+          changed();
+          return;
+        }
         await sleep(i < 40 ? 150 : 500);
       }
       throw new Error("Disney+ antwortet nicht");
     })().catch((e) => { readyP = null; throw e; });
     return readyP;
+  }
+  /** Nach einem Profilwechsel: erst Daten holen, wenn Disney wirklich das neue Profil meldet (sonst kämen die des
+      alten und landeten im Zwischenspeicher des neuen) */
+  async function expected() {
+    const exp = store.get("expect");
+    if (!exp || Date.now() - exp.at > 90e3) return;
+    for (let i = 0; i < 100; i++) {
+      const p = await bridge("profile").catch(() => null);
+      if (p && p.id === exp.id) break;
+      await sleep(200);
+    }
+    store.set("expect", 0);
+  }
+  /** Gewähltes Profil sofort als aktuelles führen: Leiste und Zwischenspeicher zeigen gleich das neue */
+  function expectProfile(p) {
+    if (!p || !p.id) return;
+    store.set("expect", { id: p.id, at: Date.now() });
+    const info = { ...(S.profileInfo || {}), id: p.id, name: p.name, img: p.img || "" };
+    S.profileInfo = info;
+    store.set("profile", info);
   }
   const EXPLORE = "https://disney.api.edge.bamgrid.com/explore/v1.21/";
   async function api(path) {
@@ -989,6 +1014,7 @@
 
   /** Disneys Profilauswahl aufrufen (nur per Seitenaufruf möglich) und dort gleich das gewählte Profil drücken */
   function switchTo(p) {
+    if (p) expectProfile(p);
     store.set("switchTo", p ? { name: p.name, img: p.img, at: Date.now() } : { at: Date.now(), manual: true });
     renderLoading("");
     const loc = (location.pathname.match(/^\/([a-z]{2}-[a-z]{2})\//) || [])[1];
@@ -1106,7 +1132,8 @@
       const p = V.profiles[clamp(S.profile, 0, V.profiles.length - 1)];
       if (!p) return;
       S.pinProfile = p;
-      S.profileInfo = null;
+      expectProfile((S.profileInfo?.profiles || []).find((x) => x.name === p.name) || null);
+      pages.clear(); details.clear(); searches.clear();
       S.stack = [{ type: "page", ref: "home", zone: "hero", row: 0, cols: {}, slide: 0 }];
       p.el.click();
     }
@@ -1230,6 +1257,7 @@
         }
         return "loading";
       }
+      if (S.autoPicked) return "loading"; // schon gedrückt: Disney wechselt gleich, ihre Auswahl nicht zeigen
       return $("[data-testid^='profile-avatar-']") ? "profiles" : "loading";
     }
     if (isLogin()) return null;
@@ -1460,7 +1488,7 @@
   // Aktives Profil (für die Leiste) – und Zwischenspeicher verwerfen, wenn es ein anderes ist als beim letzten Mal
   S.profileInfo = store.get("profile");
   setInterval(() => {
-    if (!S.authed || isPlayer() || (S.profileInfo && Date.now() - (S.profileAt || 0) < 5000)) return;
+    if (!S.authed || isPlayer() || store.get("expect") || (S.profileInfo && Date.now() - (S.profileAt || 0) < 5000)) return;
     S.profileAt = Date.now();
     bridge("profile").then((p) => {
       if (!p || !p.id) return;

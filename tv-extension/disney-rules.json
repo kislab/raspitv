@@ -1,0 +1,11 @@
+[
+  {
+    "id": 1,
+    "priority": 1,
+    "action": { "type": "block" },
+    "condition": {
+      "initiatorDomains": ["www.disneyplus.com"],
+      "requestDomains": ["log.go.com", "browser-intake-datadoghq.com", "assets.adobedtm.com"]
+    }
+  }
+]
