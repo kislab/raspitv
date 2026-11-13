@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "RaspiTV Bedienung",
-  "version": "2.0",
+  "version": "2.3",
   "description": "Macht Streaming-Webseiten im RaspiTV-Player mit der Fernbedienung bedienbar.",
   "host_permissions": [
     "http://127.0.0.1:8765/*"
@@ -165,7 +165,8 @@
         "https://www.netflix.com/*",
         "https://www.disneyplus.com/*",
         "https://www.primevideo.com/*",
-        "https://music.apple.com/*"
+        "https://music.apple.com/*",
+        "https://open.spotify.com/*"
       ],
       "js": [
         "phone-text.js"
@@ -181,6 +182,21 @@
         "youtube-keys.js"
       ],
       "run_at": "document_start"
+    },
+    {
+      "matches": [
+        "https://open.spotify.com/*"
+      ],
+      "js": [
+        "tv.js",
+        "spotify-app.js"
+      ],
+      "css": [
+        "tv.css",
+        "applemusic-app.css",
+        "spotify-app.css"
+      ],
+      "run_at": "document_idle"
     }
   ]
 }

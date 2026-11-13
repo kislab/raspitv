@@ -1,0 +1,84 @@
+/* Spotify: eigene TV-Oberfläche (spotify-app.js) im Stil der Spotify-TV-App – baut auf applemusic-app.css auf.
+   Werte in CSS-Pixeln; der Player vergrößert die Seite um 1,25 (apps.json "scale"). */
+html.tvsp-app .tvam.tvsp { background: #121212; font-family: "Spotify Mix", "Circular", -apple-system, "Helvetica Neue", "Nunito Sans", Arial, sans-serif; }
+
+/* Hintergrund der Startseite: Bild des gewählten Elements rechts, nach links und unten ins Dunkle */
+.tvsp-bg { position: absolute; right: 0; top: 0; width: 70%; height: 80%; background-size: cover; background-position: center 25%;
+  opacity: 0; pointer-events: none;
+  -webkit-mask-image: linear-gradient(90deg, transparent 0%, rgba(0,0,0,.35) 25%, #000 60%), linear-gradient(0deg, transparent 0%, #000 45%);
+  -webkit-mask-composite: source-in; mask-composite: intersect; }
+.tvsp--home .tvsp-bg { opacity: .75; }
+.tvsp-bg--soft { filter: blur(28px) saturate(1.2); transform: scale(1.1); }
+
+/* Leiste: links „läuft gerade“, in der Mitte Symbole mit Text, rechts Profil */
+html.tvsp-app .tvsp .tvam-header { height: 116px; padding: 0 76px; background: none; display: grid; grid-template-columns: 340px 1fr 340px; }
+html.tvsp-app .tvsp .tvam-header::after { display: none; }
+.tvsp-left { display: flex; align-items: center; }
+.tvsp-mini { display: flex !important; align-items: center; gap: 14px; width: 320px; height: 58px; padding: 0 16px 0 0 !important;
+  border-radius: 6px; background: rgba(255,255,255,.1) !important; overflow: hidden; }
+.tvsp-mini[hidden] { display: none !important; }
+.tvsp-mini__img { width: 58px; height: 58px; object-fit: cover; flex: 0 0 58px; background: #333; }
+.tvsp-mini__text { flex: 1 1 auto; min-width: 0; }
+.tvsp-mini__title { font-size: 17px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tvsp-mini__sub { font-size: 13px; color: rgba(255,255,255,.65); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tvsp-mini__icon { width: 22px; height: 22px; flex: 0 0 22px; }
+.tvsp-mini.tv-focus { background: #fff !important; color: #121212 !important; }
+.tvsp-mini.tv-focus .tvsp-mini__sub { color: rgba(0,0,0,.6); }
+html.tvsp-app .tvsp .tvam-header .tvam-pills { background: none; gap: 30px; padding: 0; justify-self: center; }
+html.tvsp-app .tvsp .tvam-pill { gap: 12px; padding: 10px 14px !important; font-size: 19px; font-weight: 500; color: rgba(255,255,255,.6) !important; background: none !important; }
+html.tvsp-app .tvsp .tvam-pill__icon { width: 24px; height: 24px; color: currentColor; }
+html.tvsp-app .tvsp .tvam-pill.is-selected { color: #fff !important; background: none !important; }
+html.tvsp-app .tvsp .tvam-pill.tv-focus { color: #121212 !important; background: #fff !important; border-radius: 6px; }
+.tvsp-profile { justify-self: end; display: flex; align-items: center; gap: 16px; width: 320px; height: 76px; padding: 0 18px;
+  border-radius: 6px; background: rgba(0,0,0,.45); box-sizing: border-box; }
+.tvsp-profile__img { width: 48px; height: 48px; border-radius: 50%; object-fit: cover; }
+.tvsp-profile__name { font-size: 19px; }
+
+/* Seiten unter der höheren Leiste */
+html.tvsp-app .tvsp .tvam-page { top: 116px; }
+html.tvsp-app .tvsp .tvam-subnav { top: 116px; background: #121212; }
+html.tvsp-app .tvsp.tvam--lib .tvam-page { top: 180px; }
+html.tvsp-app .tvsp .tvam-scroll { padding: 10px 76px 80px; }
+
+/* Startseite: großer Bereich mit dem gewählten Element */
+.tvsp-hero { height: 250px; display: flex; flex-direction: column; justify-content: center; }
+.tvsp-hero__title { margin: 0; font-size: 52px; font-weight: 700; line-height: 1.1; letter-spacing: -.01em;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 900px; }
+.tvsp-hero__meta { margin-top: 12px; font-size: 19px; color: rgba(255,255,255,.75); }
+
+/* Schnellzugriff: 2 Reihen à 4 Kacheln (Bild links, Name rechts) */
+.tvsp-shorts { display: flex; flex-direction: column; gap: 18px; margin-bottom: 34px; }
+.tvsp-shorts__row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 28px; }
+.tvsp-short { display: flex !important; align-items: center; gap: 0; height: 76px; border-radius: 4px; overflow: hidden;
+  background: rgba(42,42,42,.92) !important; }
+.tvsp-short__img { width: 76px; height: 76px; flex: 0 0 76px; object-fit: cover; background: #333; }
+.tvsp-short__img.is-empty, .tvsp-short__img.tvsp-liked { background: linear-gradient(135deg, #450af5, #8e8ee5); }
+.tvsp-short__title { padding: 0 16px; font-size: 18px; font-weight: 700; line-height: 1.25; display: -webkit-box; -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical; overflow: hidden; }
+.tvsp-short.tv-focus { box-shadow: 0 0 0 3px #fff; background: rgba(62,62,62,.95) !important; }
+
+/* Reihen der Startseite: große Cover ohne Beschriftung (der große Bereich oben zeigt den Namen) */
+.tvsp-home .tvam-card { width: 170px; }
+.tvsp-home .tvam-card .tvam-card__img { width: 170px; height: 170px; border-radius: 4px; }
+.tvsp-home .tvam-card .tvam-card__title, .tvsp-home .tvam-card .tvam-card__sub { display: none; }
+.tvsp-home .tvsp-round .tvam-card__img { border-radius: 50%; }
+.tvsp-home .tvam-shelf__title { font-size: 26px; }
+
+/* Farben */
+html.tvsp-app .tvam-dot { background: #1ed760; }
+html.tvsp-app .tvam-now__label { color: #1ed760; }
+html.tvsp-app .tvam-detail__by { color: #1ed760; }
+html.tvsp-app .tvam-card__img.is-empty, html.tvsp-app .tvam-detail__art.is-empty { background: linear-gradient(135deg, #450af5, #c4efd9); }
+html.tvsp-app .tvsp-round .tvam-card__img { border-radius: 50%; }
+html.tvsp-app .tvam-logo { display: none; }
+
+/* Ladebildschirm bis der Web-Player bereit ist */
+.tvsp-boot { position: fixed; inset: 0; z-index: 2147483001; background: #121212; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 40px; }
+.tvsp-boot__mark { width: 90px; height: 90px; border-radius: 50%; background: #1ed760; }
+.tvsp-boot__spin { width: 36px; height: 36px; border-radius: 50%; border: 4px solid rgba(255,255,255,.2); border-top-color: #fff;
+  animation: tvsp-spin 1s linear infinite; }
+@keyframes tvsp-spin { to { transform: rotate(360deg); } }
+
+/* Pillen, Knöpfe und Zeilen zeigen die Auswahl selbst – kein zusätzlicher eckiger Rahmen */
+html.tv-am-noring #tv-ring { display: none !important; }

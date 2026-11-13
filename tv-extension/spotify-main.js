@@ -28,6 +28,7 @@
   let lastCommand = null;   // letzter Wiedergabe-Befehl des Web-Players (Adresse + Inhalt, ohne Schlüssel)
   let spclient = null;      // Wiedergabe-Server
   let deviceId = null;      // dieses Web-Player-Gerät
+  const playerUrls = [];    // zuletzt benutzte Player-Adressen (Fehlersuche, ohne Schlüssel)
   function rememberGql(url, body) {
     try {
       if (!/pathfinder/.test(url)) return;
@@ -59,8 +60,14 @@
           lastCommand = { url, body: init.body };
         }
         // Gerät dieses Web-Players und Wiedergabe-Server (z. B. https://gew4-spclient.spotify.com)
-        const dev = url.match(/^(https:\/\/[^/]+)\/connect-state\/v1\/(?:devices\/hobs_|player\/command\/from\/)([0-9a-f]{20,})/);
+        // Die volle Kennung (40 Zeichen) steht bei track-playback bzw. im Play-Befehl des Web-Players;
+        // connect-state/…/hobs_<id> enthält nur eine gekürzte – damit antwortet Spotify mit 404.
+        const dev = url.match(/^(https:\/\/[^/]+)\/(?:track-playback\/v1\/devices\/|connect-state\/v1\/player\/command\/from\/)([0-9a-f]{40})\b/);
         if (dev) { spclient = dev[1]; deviceId = dev[2]; }
+        if (/connect-state|track-playback|player/.test(url)) {
+          playerUrls.push(`${init?.method || "GET"} ${url.replace(/^https:\/\/[^/]+/, "").split("?")[0].slice(0, 140)}`);
+          if (playerUrls.length > 25) playerUrls.shift();
+        }
       }
     } catch (e) { /* nie die Seite stören */ }
     return origFetch.apply(this, arguments);
@@ -117,6 +124,7 @@
     ready: async () => ({ ready: !!auth, player: !!(spclient && deviceId), gql: Object.keys(gqlOps) }),
     gql: ({ name, variables }) => gql(name, { ...(gqlOps[name]?.vars || {}), ...(variables || {}) }),
     template: ({ name }) => gqlOps[name]?.vars || null,
+    diag: () => ({ spclient, deviceId, playerUrls }),
     // Abspielen wie der Web-Player selbst: „play“-Befehl an dieses Gerät. context = Playlist/Album/…-URI,
     // trackUri/index = ab diesem Titel.
     async play({ context, trackUri, index }) {

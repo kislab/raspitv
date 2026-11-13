@@ -104,6 +104,12 @@ Repository. Ohne Internet (z. B. im Urlaub) wartet der Start höchstens 5 s aufs
 vorhandene Version; beim nächsten Start wird das Update erneut versucht. git hat ein Zeitlimit und fragt nie nach
 einem Passwort, damit auch ein WLAN ohne Internet (Hotel-Anmeldeseite) den Start nicht aufhält. Zusätzlich: Einstellungen → System → **Nach Updates suchen** – lädt die neue Version
 und startet RaspiTV damit neu.
+- **Spotify** (angemeldet): eigene Oberfläche wie die Spotify-TV-App (`spotify-app.js/.css`, baut auf `applemusic-app.css`
+  auf). Leiste mit „läuft gerade“ links, Startseite · Suchen · Bibliothek, Profil rechts; Startseite mit großem Bereich für das
+  gewählte Element, Schnellzugriff-Raster (2 × 4) und Cover-Reihen; Bibliothek (Playlists, Alben, Künstler:innen,
+  Lieblingssongs), Playlist-/Album-/Künstlerseiten (8 Zeilen + Nachladen), Suche, Jetzt läuft mit „Als Nächstes“.
+  Daten über die GraphQL-Abfragen des Web-Players (Kennungen aus dessen Skripten), Abspielen per „play“-Befehl an den
+  Web-Player selbst (`spotify-main.js`; die öffentliche api.spotify.com sperrt den Web-Player). Spotifys Seite wird nicht gezeichnet.
 - **Auflösung und Bildrate** (Einstellungen → Darstellung): alle Stufen, die der Fernseher kann (4K, QHD, Full HD, HD),
   mit Empfehlung für das erkannte Pi-Modell (Pi 4: Full HD 60 Hz; 4K gibt es meist nur mit 30 Hz und ruckelt). Nach dem
   Umschalten „Bild in Ordnung?“, ohne Antwort nach 15 s zurück. **Bildrate an Videos anpassen**: `tv.js` misst die Bildrate

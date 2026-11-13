@@ -10,8 +10,32 @@ RASPITV_DEBUG=1 setsid lxterminal --title=RaspiTV -e bash -c "python3 $ROOT/rasp
 sleep 6
 [ -z "$1" ] && exit 0
 # Kachel der App anwählen (Reihenfolge wie in apps.json) und öffnen
-INDEX=$(python3 -c "import json,sys; ids=[a['id'] for a in json.load(open('$ROOT/apps.json'))]; print(ids.index(sys.argv[1]))" "$1") || exit 1
+# Position wie in RaspiTV: Reihenfolge und ausgeblendete Apps aus den Einstellungen des zuletzt benutzten Kontos
+INDEX=$(python3 - "$1" <<PY
+import json, sys
+from pathlib import Path
+apps = json.load(open("$ROOT/apps.json"))
+cfg = Path.home() / ".config/raspitv"
+try:
+    last = json.loads((cfg / "accounts.json").read_text()).get("last") or "main"
+except (OSError, ValueError):
+    last = "main"
+s = {}
+for f in (cfg / "settings.json", cfg / "accounts" / f"{last}.json"):
+    try:
+        s.update(json.loads(f.read_text()))
+    except (OSError, ValueError):
+        pass
+known = set(s.get("known", []))
+hidden = set(s.get("hidden", [])) | {a["id"] for a in apps if a.get("store") and a["id"] not in known}
+order = {i: n for n, i in enumerate(s.get("order", []))}
+ordered = sorted(apps, key=lambda a: order.get(a["id"], len(order) + apps.index(a)))
+shown = [a["id"] for a in ordered if a["id"] not in hidden]
+print(shown.index(sys.argv[1]))
+PY
+) || exit 1
 DOMAIN=$(python3 -c "import json,sys,urllib.parse; a={a['id']: a for a in json.load(open('$ROOT/apps.json'))}[sys.argv[1]]; print(urllib.parse.urlparse(a['url']).hostname)" "$1")
+for _ in $(seq 12); do curl -s -d '{"key":"left"}' localhost:8765/key >/dev/null; sleep 0.1; done
 for _ in $(seq "$INDEX"); do curl -s -d '{"key":"right"}' localhost:8765/key >/dev/null; sleep 0.3; done
 curl -s -d '{"key":"ok"}' localhost:8765/key >/dev/null
 for _ in $(seq 40); do sleep 1; curl -s -m 1 http://127.0.0.1:9222/json 2>/dev/null | grep -q "$DOMAIN" && break; done
