@@ -750,6 +750,7 @@
     sf = info?.storefront || "de";
     document.documentElement.classList.add("tvam-app");
     build();
+    window.TVBoot?.release(); // boot.js
     Object.assign(TV.site, {
       scope: () => root,
       skip: () => false,

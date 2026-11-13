@@ -1459,6 +1459,7 @@
   function update() {
     const view = computeView();
     document.documentElement.classList.toggle("nftv-on", !!view);
+    if (view || /\/(play|video)\//.test(location.pathname)) window.TVBoot?.release(); else window.TVBoot?.idle(400); // boot.js
     // Vorschau-Videos der versteckten Seite anhalten – nie das Video des Players
     if (view) {
       for (const v of $$("video")) {

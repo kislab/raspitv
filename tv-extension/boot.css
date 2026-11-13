@@ -1,0 +1,9 @@
+/* Startschutz (boot.js): Original-Seite verdecken, bis die eigene Oberfläche steht */
+html.tv-boot { background: #000 !important; }
+html.tv-boot body { visibility: hidden !important; }
+html.tv-boot::after {
+  content: ""; position: fixed; left: 50%; top: 50%; width: 56px; height: 56px; margin: -28px 0 0 -28px; z-index: 2147483647;
+  border-radius: 50%; border: 5px solid rgba(255,255,255,.15); border-top-color: var(--tv-boot-accent, #fff);
+  animation: tv-boot-spin .9s linear infinite;
+}
+@keyframes tv-boot-spin { to { transform: rotate(360deg); } }

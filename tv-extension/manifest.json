@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "RaspiTV Bedienung",
-  "version": "2.11",
+  "version": "2.12",
   "description": "Macht Streaming-Webseiten im RaspiTV-Player mit der Fernbedienung bedienbar.",
   "host_permissions": [
     "http://127.0.0.1:8765/*"
@@ -10,6 +10,22 @@
     "service_worker": "background.js"
   },
   "content_scripts": [
+    {
+      "matches": [
+        "https://www.netflix.com/*",
+        "https://www.disneyplus.com/*",
+        "https://open.spotify.com/*",
+        "https://music.apple.com/*",
+        "https://www.twitch.tv/*"
+      ],
+      "js": [
+        "boot.js"
+      ],
+      "css": [
+        "boot.css"
+      ],
+      "run_at": "document_start"
+    },
     {
       "matches": [
         "https://www.disneyplus.com/*"

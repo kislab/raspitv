@@ -1231,6 +1231,8 @@
   function update() {
     const view = computeView();
     document.documentElement.classList.toggle("nftv-on", !!view);
+    // Startschutz (boot.js): eigene Oberfläche steht bzw. die Seite selbst ist dran (Player)
+    if (view || location.pathname.startsWith("/watch")) window.TVBoot?.release(); else window.TVBoot?.idle(400);
     if (view) {
       // Vorschau-Videos der versteckten Seite stumm und angehalten lassen
       for (const v of $$("video")) {

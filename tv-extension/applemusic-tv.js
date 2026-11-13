@@ -429,7 +429,10 @@
     if (!window.TVAM_APP || window.TVAM_APP.active) return;
     window.TVAM_APP.call("auth").then((info) => {
       if (info.authorized) window.TVAM_APP.start(info);
-      else if (++tries < 40) setTimeout(startApp, 1000);
+      else {
+        if (tries > 8) window.TVBoot?.release(); // nicht angemeldet: Apples Seite zeigen (boot.js)
+        if (++tries < 40) setTimeout(startApp, 1000);
+      }
     }).catch(() => { if (++tries < 40) setTimeout(startApp, 1000); });
   })();
 })();

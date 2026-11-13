@@ -803,6 +803,7 @@
   boot.append(el("div", "tvsp-boot__mark"), el("div", "tvsp-boot__spin"));
   document.documentElement.classList.add("tvam-app", "tvsp-app");
   document.documentElement.append(boot);
+  window.TVBoot?.release(); // eigener Ladebildschirm übernimmt (boot.js)
   function giveUp() { // nicht angemeldet o. Ä.: Spotifys Seite zeigen (mit tv.js bedienbar)
     boot.remove();
     document.documentElement.classList.remove("tvam-app", "tvsp-app");

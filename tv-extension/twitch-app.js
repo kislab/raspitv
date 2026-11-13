@@ -726,12 +726,13 @@
     const ready = authToken()
       ? gql(`{ currentUser { login displayName profileImageURL(width:70) } }`).then((d) => { me = d.currentUser || null; }).catch(() => {})
       : Promise.resolve();
-    ready.finally(() => { renderPills(); openTab("home"); });
+    ready.finally(() => { renderPills(); openTab("home"); window.TVBoot?.release(); });
   }
 
   // nur auf normalen Seiten übernehmen (nicht im eingebetteten Player, nicht auf der Anmeldeseite)
   if (/^\/(login|signup|passport)/.test(location.pathname) || location.hostname !== "www.twitch.tv") {
     TV.site.back = () => (location.assign("/directory"), true);
+    window.TVBoot?.release();
     return;
   }
   start();
