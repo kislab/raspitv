@@ -3,9 +3,11 @@
 # TV-Pi nichts bringt. Vollständig umkehrbar:
 #   ~/raspitv/boot/slim.sh          entschlacken (fragt nach dem sudo-Passwort)
 #   ~/raspitv/boot/slim.sh --undo   alles wiederherstellen (auch Teil der Deinstallation)
+#   ~/raspitv/boot/slim.sh --dry-run  nur anzeigen, welche Pakete entfernt würden
 #
-# Bleibt bewusst erhalten: Desktop und Taskleiste, Bluetooth, WLAN, SSH, Tailscale, Raspberry Pi Connect,
-# avahi (raspi.local), Ton (PipeWire), Schlüsselbund (Chromium-Logins), Firmware-Updates (rpi-eeprom).
+# Bleibt bewusst erhalten: der Kern-Desktop (labwc, Taskleiste, Dateimanager, Terminal – für „Zurück zum Desktop“
+# im Entwicklermodus), Bootbild (plymouth) und Pi-Grundeinstellungen, Bluetooth, WLAN, SSH, Tailscale, Raspberry Pi
+# Connect, avahi (raspi.local), Ton (PipeWire), Schlüsselbund (Chromium-Logins), Firmware-Updates (rpi-eeprom).
 set -uo pipefail
 
 STATE="${XDG_CONFIG_HOME:-$HOME/.config}/raspitv/slim"
@@ -16,15 +18,21 @@ say() { printf '\033[1;36m==>\033[0m %s\n' "$*"; }
 # VNC-Server für X11, Bildschirmtastatur für Touch, Entwicklungs-Werkzeuge, Kernel für den Pi 5)
 PACKAGES="cloud-init rpi-cloud-init-mods cups cups-browsed cups-daemon cups-client hplip realvnc-vnc-server
   firefox rpi-firefox-mods vlc vlc-bin vlc-l10n rpi-imager rpi-userguide squeekboard thonny python3-mypy mypy
-  mkvtoolnix linux-image-rpi-2712 linux-headers-rpi-v8 linux-headers-rpi-2712"
+  mkvtoolnix linux-image-rpi-2712 linux-headers-rpi-v8 linux-headers-rpi-2712
+  geany galculator eom evince mousepad rp-bookshelf agnostics xarchiver lxtask piclone rp-prefapps piwiz
+  gcc g++ build-essential python3-dev gdb pocketsphinx-en-us
+  firmware-atheros firmware-mediatek firmware-realtek firmware-libertas
+  rpd-applications rpd-developer rpd-graphics rpd-utilities rpd-preferences rpd-wayland-extras
+  rpd-x-core rpd-x-extras openbox lxpanel-pi xcompmgr xinit gldriver-test"
 # Was RaspiTV (und der Desktop) braucht, darf beim Aufräumen der Abhängigkeiten nie mitgehen
 KEEP="git python3 python3-pyqt5 python3-pyqt5.qtquick qml-module-qtquick2 qml-module-qtquick-window2
   qml-module-qtgraphicaleffects mpv chromium libwidevinecdm0 lxterminal libqrencode4 fonts-noto-color-emoji
   sound-theme-freedesktop libcanberra0 libadwaita-1-0 libaribb24-0t64 wlr-randr grim labwc wf-panel-pi pcmanfm-pi
-  rpi-connect tailscale"
+  rpi-connect tailscale rpd-wayland-core rpd-common rpd-plym-splash rpd-theme plymouth raspberrypi-sys-mods
+  xwayland gnome-keyring libpam-gnome-keyring"
 # Dienste: Warten aufs Netz beim Start (RaspiTV wartet selbst höchstens 5 s), NFS, Pi-5-/X11-Tests, System-VNC,
 # tägliche Paket-Downloads und Handbuch-Index im Hintergrund
-UNITS="NetworkManager-wait-online.service rpcbind.service rpcbind.socket nfs-blkmap.service rp1-test.service
+UNITS="packagekit.service nfs-client.target rpc-statd.service NetworkManager-wait-online.service rpcbind.service rpcbind.socket nfs-blkmap.service rp1-test.service
   glamor-test.service wayvnc-control.service apt-daily.timer apt-daily-upgrade.timer man-db.timer"
 # Benutzerdienste: Geräte-Erkennung für iPhone, Online-Konten, Digitalkameras, Android-Handys (MTP)
 USER_UNITS="gvfs-afc-volume-monitor.service gvfs-goa-volume-monitor.service gvfs-gphoto2-volume-monitor.service
@@ -52,22 +60,73 @@ if [ "${1:-}" = "--undo" ]; then
   exit 0
 fi
 
-say "Entschlacke Raspberry Pi OS für RaspiTV (umkehrbar mit: $0 --undo)"
-sudo -v || exit 1
-mkdir -p "$STATE"
+if [ "${1:-}" != "--dry-run" ]; then
+  say "Entschlacke Raspberry Pi OS für RaspiTV (umkehrbar mit: $0 --undo)"
+  sudo -v || exit 1
+  mkdir -p "$STATE"
+fi
 
 # 1. Programme
+# dazu: Kernel und Header für den Pi 5, alle Kernel-Header, der X11-Server (der Pi läuft unter Wayland),
+# Panel-Erweiterungen des alten X11-Panels
+EXTRA="$(dpkg-query -Wf '${Package} ${Status}\n' 2>/dev/null | awk '/ installed$/{print $1}' |
+  grep -E '^linux-(image|headers)-.*-rpi-2712$|^linux-headers-|^xserver-xorg|^lpplug-')"
+# Schutzliste: alles, was der Kern-Desktop, das Bootbild und die Pi-Grundeinstellungen brauchen
+CORE="$(apt-cache depends --installed rpd-wayland-core rpd-common rpd-plym-splash 2>/dev/null |
+  awk '/Depends|Recommends/{print $2}' | grep -v '^<')"
 INSTALLED=""
-for p in $PACKAGES; do dpkg -s "$p" >/dev/null 2>&1 && INSTALLED="$INSTALLED $p"; done
+# Teile der Desktop-Sammelpakete (Paket-Aktualisierer, NFS …) werden nie entfernt: sonst nimmt apt die
+# Sammelpakete rpd-wayland-core/rpd-common mit, und darin steckt der Start der Desktop-Sitzung (labwc-pi,
+# Sitzungsdatei, labwc-Grundeinstellungen). Solche Teile werden unten nur abgeschaltet.
+for p in $PACKAGES $EXTRA; do
+  case " $KEEP $CORE " in *" $p "*) continue ;; esac
+  dpkg -s "$p" >/dev/null 2>&1 && INSTALLED="$INSTALLED $p"
+done
+if [ "${1:-}" = "--dry-run" ]; then  # nur zeigen, was passieren würde
+  NEEDED=""
+  for p in $KEEP $CORE; do case " $INSTALLED " in *" $p "*) ;; *) NEEDED="$NEEDED $p" ;; esac; done
+  # Schutz (apt-mark manual) an einer Kopie der apt-Markierungen nachstellen
+  STATES="$(mktemp)"
+  cp /var/lib/apt/extended_states "$STATES"
+  python3 - "$STATES" $NEEDED <<'EOF'
+import sys
+path, keep = sys.argv[1], set(sys.argv[2:])
+out, cur = [], None
+for line in open(path).read().split("\n"):
+    if line.startswith("Package: "):
+        cur = line.split(": ", 1)[1]
+    if line.startswith("Auto-Installed: 1") and cur in keep:
+        line = "Auto-Installed: 0"
+    out.append(line)
+open(path, "w").write("\n".join(out))
+EOF
+  # shellcheck disable=SC2086
+  apt-get -s -o Dir::State::extended_states="$STATES" remove --purge --auto-remove $INSTALLED 2>/dev/null |
+    awk '/^Purg/{print $2}' | tr '\n' ' '
+  rm -f "$STATES"
+  echo
+  exit 0
+fi
 if [ -n "$INSTALLED" ]; then
   say "Entferne:$INSTALLED"
   # merken (auch schon früher entfernte nicht vergessen), damit --undo sie wieder installiert
   { cat "$STATE/packages" 2>/dev/null; for p in $INSTALLED; do echo "$p"; done; } | sort -u > "$STATE/packages.new"
   mv "$STATE/packages.new" "$STATE/packages"
   NEEDED=""
-  for p in $KEEP; do dpkg -s "$p" >/dev/null 2>&1 && NEEDED="$NEEDED $p"; done
+  for p in $KEEP $CORE; do
+    case " $INSTALLED " in *" $p "*) continue ;; esac  # ausdrücklich zu entfernende nicht schützen
+    dpkg -s "$p" >/dev/null 2>&1 && NEEDED="$NEEDED $p"
+  done
   # shellcheck disable=SC2086
   sudo apt-mark manual $NEEDED >/dev/null
+  # Sicherheitsprüfung: würde apt dabei etwas Geschütztes mitnehmen, gar nichts entfernen
+  # shellcheck disable=SC2086
+  HIT="$(apt-get -s remove --purge --auto-remove $INSTALLED 2>/dev/null | awk '/^Purg|^Remv/{print $2}' |
+    grep -xF -f <(printf '%s\n' $KEEP $CORE rpd-wayland-core rpd-common) | tr '\n' ' ')"
+  if [ -n "$HIT" ]; then
+    echo "!! Abbruch: apt würde auch Wichtiges entfernen: $HIT"
+    exit 1
+  fi
   # shellcheck disable=SC2086
   sudo apt-get remove --purge -y $INSTALLED && sudo apt-get autoremove --purge -y
   sudo apt-get clean
@@ -75,9 +134,11 @@ fi
 
 # 2. Dienste
 for u in $UNITS; do
-  if systemctl is-enabled "$u" >/dev/null 2>&1; then
+  # maskieren statt nur abschalten: manche (packagekit, rpcbind) werden sonst bei Bedarf doch gestartet
+  if [ "$(systemctl is-enabled "$u" 2>/dev/null)" != "masked" ] && systemctl cat "$u" >/dev/null 2>&1; then
     echo "$u" >> "$STATE/units"
     sudo systemctl disable --now "$u" 2>/dev/null
+    sudo systemctl mask "$u" 2>/dev/null
   fi
 done
 for u in $USER_UNITS; do

@@ -2,6 +2,7 @@
 # RaspiTV vollständig entfernen und alles zurückstellen, was RaspiTV am System geändert hat.
 #   ~/raspitv/uninstall.sh                 (oder Doppelklick auf „RaspiTV deinstallieren“ auf dem Desktop)
 #   ~/raspitv/uninstall.sh --desktop-icon  nur das Desktop-Symbol zum Deinstallieren anlegen
+#   ~/raspitv/uninstall.sh --yes           ohne Rückfrage (RaspiTV → Einstellungen → Entwicklermodus)
 #
 # Rückgängig gemacht wird (Gegenstück zu install.sh):
 #   - RaspiTV, Player (Chromium) und mpv beenden
@@ -65,8 +66,10 @@ echo "  • Bootbild (wieder das Original), Bluetooth-Einstellung (wieder das Or
 echo "  • von RaspiTV installierte Pakete"
 echo "  • Einstellungen, Konten und Logins (Netflix, Disney+, Prime, Jellyfin …)"
 echo
-read -rp "Wirklich alles entfernen? Zum Bestätigen „ja“ eingeben: " answer
-[ "$answer" = "ja" ] || { echo "Abgebrochen – nichts wurde verändert."; exit 0; }
+if [ "${1:-}" != "--yes" ]; then  # --yes: schon in RaspiTV bestätigt (Einstellungen → Entwicklermodus)
+  read -rp "Wirklich alles entfernen? Zum Bestätigen „ja“ eingeben: " answer
+  [ "$answer" = "ja" ] || { echo "Abgebrochen – nichts wurde verändert."; exit 0; }
+fi
 
 # 1. Laufende Teile beenden (Muster treffen nur RaspiTV, nicht diese Shell)
 say "Beende RaspiTV"

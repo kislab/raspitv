@@ -145,6 +145,12 @@ def _set_boot_splash(enabled):
             'shown="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/raspitv-splash-shown"; rm -f "$shown"; i=0\n'
             f"python3 '{ROOT}/splash.py' &\n"
             'while [ ! -e "$shown" ] && [ $i -lt 30 ]; do sleep 0.1; i=$((i+1)); done\n'
+            "# RaspiTV braucht weder Desktop noch Taskleiste (spart Speicher und Rechenzeit). labwc startet sie über den\n"
+            "# System-Autostart trotzdem: sobald sie da sind, wieder beenden. „Zurück zum Desktop“ startet sie neu.\n"
+            "( i=0; while [ $i -lt 80 ]; do\n"
+            "    pkill -f '^/bin/sh /usr/bin/lwrespawn /usr/bin/(wf-panel-pi|pcmanfm-pi)' && sleep 0.2\n"
+            "    pkill -x wf-panel-pi; pkill -f '^pcmanfm --desktop'; pkill -f '^/bin/bash /usr/bin/pcmanfm-pi'\n"
+            "    sleep 0.25; i=$((i+1)); done ) &\n"
             + (f". '{previous}'\n" if previous == LABWC_BACKUP else
                # Raspberry Pi OS startet labwc mit -m: dann führt labwc den System-Autostart selbst aus –
                # ein zweiter Aufruf hier startete Leiste, Desktop usw. doppelt (die Kopien starten sich dann
@@ -163,6 +169,18 @@ def _set_boot_splash(enabled):
         subprocess.run(["pkill", "-HUP", "-x", "labwc"], check=False)  # Regeln neu laden
 
 
+LOG = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local/share")) / "raspitv" / "raspitv.log"
+
+
+def start_desktop():
+    """Desktop und Taskleiste starten (im RaspiTV-Betrieb laufen sie nicht), z. B. vor „Zurück zum Desktop“."""
+    for prog in ("/usr/bin/pcmanfm-pi", "/usr/bin/wf-panel-pi"):
+        running = subprocess.run(["pgrep", "-f", f"^/bin/sh /usr/bin/lwrespawn {prog}"], capture_output=True).returncode == 0
+        if not running and Path(prog).exists():
+            subprocess.Popen(["setsid", "/usr/bin/lwrespawn", prog], stdin=subprocess.DEVNULL,
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+
+
 def set_autostart(enabled):
     """Legt den Autostart-Eintrag an (Terminal öffnen, darin RaspiTV laden) oder entfernt ihn."""
     _set_boot_splash(enabled)
@@ -172,13 +190,12 @@ def set_autostart(enabled):
     _write_if_changed(AUTOSTART, (
         "[Desktop Entry]\n"
         "Type=Application\n"
-        "Name=RaspiTV (Terminal)\n"
-        "Comment=Öffnet ein Terminal und startet darin RaspiTV\n"
-        "# Nach dem Beenden von RaspiTV bleibt das Terminal mit einer Shell offen.\n"
+        "Name=RaspiTV\n"
+        "Comment=Startet RaspiTV (ohne Terminal; Ausgaben in ~/.local/share/raspitv/raspitv.log)\n"
         # Startbild (läuft meist schon seit dem labwc-Autostart), über das Startbild die neueste Version von
         # GitHub holen (ohne Netz geht es mit der alten weiter), RaspiTV starten; endet RaspiTV, Startbild schließen
-        f'Exec=lxterminal --title=RaspiTV -e bash -c "cd {ROOT} && (python3 splash.py &); python3 splash.py --update; '
-        'python3 raspitv.py; python3 splash.py --done; exec bash"\n'
+        f'Exec=bash -c "mkdir -p {LOG.parent}; cd {ROOT} && (python3 splash.py &); '
+        f'{{ python3 splash.py --update; python3 raspitv.py; }} > {LOG} 2>&1; python3 splash.py --done"\n'
         "Icon=video-display\n"
         "Terminal=false\n"
     ))

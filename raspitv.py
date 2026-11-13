@@ -496,6 +496,20 @@ class Home(AccountsUI, JellyfinUI, QObject):
     def confirm(self, question, label, action):
         self.dialog = {"text": question, "buttons": [("Abbrechen", self.close_dialog), (label, action)], "index": 0}
 
+    def to_desktop(self):
+        """RaspiTV beenden; Desktop und Taskleiste laufen im RaspiTV-Betrieb nicht und werden dafür gestartet."""
+        cfg.start_desktop()
+        QGuiApplication.quit()
+
+    def uninstall_raspitv(self):
+        """Deinstallation in einem Terminal auf dem Desktop (braucht das sudo-Passwort für Systemänderungen)."""
+        cfg.start_desktop()
+        script = Path(__file__).resolve().parent / "uninstall.sh"
+        subprocess.Popen(["setsid", "lxterminal", "--title=RaspiTV deinstallieren", "-e", "bash", "-c",
+                          f"'{script}' --yes; echo; read -rp 'Enter drücken zum Schließen …'"],
+                         start_new_session=True)
+        QGuiApplication.quit()
+
     def system(self, label, verb):
         """Neu starten / Ausschalten. Scheitert es (z. B. fehlt die Freigabe aus install.sh, dann will das
         System ein Passwort), eine Meldung zeigen statt still nichts zu tun."""
@@ -1050,7 +1064,7 @@ class Home(AccountsUI, JellyfinUI, QObject):
                   "change": lambda step: cycle("screen_off_min", cfg.SCREEN_OFF_TIMES, step)},
                  {"kind": "action", "label": "Bildschirmschoner jetzt zeigen", "run": self.show_saver},
              ]},
-            {"label": "System", "icon": "power", "desc": "Netzwerk, Start, Updates und Ausschalten",
+            {"label": "System", "icon": "power", "desc": "Netzwerk, Updates und Ausschalten",
              "items": [
                  {"kind": "header", "label": "Verbindungen"},
                  {"kind": "action", "label": "WLAN", "hint": network.wifi_current() or
@@ -1063,15 +1077,23 @@ class Home(AccountsUI, JellyfinUI, QObject):
                  {"kind": "action", "label": "Verbundene Handys entfernen",
                   "hint": f"{len(s['phone_tokens'])} verbunden" if s["phone_tokens"] else "keine",
                   "run": self.forget_phones},
-                 {"kind": "header", "label": "Start und Updates"},
-                 {"kind": "toggle", "label": "Beim Hochfahren starten", "value": cfg.autostart_enabled,
-                  "change": lambda step: cfg.set_autostart(not cfg.autostart_enabled())},
+                 {"kind": "header", "label": "Updates"},
                  {"kind": "action", "label": "Nach Updates suchen", "run": self.run_update},
                  {"kind": "header", "label": "Beenden"},
-                 {"kind": "action", "label": "Zurück zum Desktop",
-                  "run": lambda: self.confirm("RaspiTV beenden?", "Zum Desktop", QGuiApplication.quit)},
                  {"kind": "action", "label": "Neu starten", "run": lambda: self.system("Neu starten", "reboot")},
                  {"kind": "action", "label": "Ausschalten", "run": lambda: self.system("Ausschalten", "poweroff")},
+             ]},
+            {"label": "Entwicklermodus", "icon": "gear", "desc": "Desktop, Start beim Hochfahren und Deinstallieren",
+             "items": [
+                 {"kind": "toggle", "label": "Beim Hochfahren starten", "value": cfg.autostart_enabled,
+                  "change": lambda step: cfg.set_autostart(not cfg.autostart_enabled())},
+                 {"kind": "action", "label": "Zurück zum Desktop", "hint": "",
+                  "run": lambda: self.confirm("RaspiTV beenden und den Desktop zeigen?", "Zum Desktop", self.to_desktop)},
+                 {"kind": "header", "label": "RaspiTV entfernen"},
+                 {"kind": "action", "label": "RaspiTV deinstallieren", "hint": "",
+                  "run": lambda: self.confirm("RaspiTV vollständig deinstallieren? Alle Einstellungen und Logins "
+                                              "werden gelöscht.", "Deinstallieren", self.uninstall_raspitv)},
+                 {"kind": "info", "label": "Protokoll", "value": str(cfg.LOG).replace(str(Path.home()), "~")},
              ]},
             {"label": "Info", "icon": "info", "desc": "Über dieses Gerät",
              "items": [
