@@ -98,7 +98,6 @@ html.tvm-app #tv-ring { display: none !important; }
 .tvm-video { position: fixed; inset: 0; width: 100vw; height: 100vh; z-index: 2147482000; background: #000; }
 .tvm-player { position: fixed; inset: 0; z-index: 2147483000; pointer-events: none;
   font-family: Inter, "Noto Sans", "Helvetica Neue", Arial, sans-serif; color: #fff; -webkit-font-smoothing: antialiased; }
-.tvm-video::cue { font-size: 34px; background: rgba(0,0,0,.6); }
 .tvm-wait { position: absolute; inset: 0; display: none; place-items: center; }
 .tvm-wait.is-on { display: grid; }
 .tvm-bar { position: absolute; left: 0; right: 0; bottom: 0; padding: 140px 64px 40px; background: linear-gradient(transparent, rgba(0,0,0,.85) 60%);

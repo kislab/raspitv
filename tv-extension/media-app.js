@@ -360,7 +360,8 @@
     if (s.title) bar.querySelector(".tvm-bar__title").textContent = s.title;
     watching.live = !!(s.live || it.kind === "live");
     const start = from != null ? from : watching.live ? 0 : positionOf(it);
-    if (s.type === "hls" && !video.canPlayType("application/vnd.apple.mpegurl") && window.Hls && Hls.isSupported()) {
+    // HLS immer über hls.js: Chromiums eigene HLS-Wiedergabe bleibt auf dem Pi in niedriger Qualität hängen
+    if (s.type === "hls" && window.Hls && Hls.isSupported()) {
       const hls = new Hls({ capLevelToPlayerSize: true, maxBufferLength: 30, startPosition: start > 0 ? start : -1 });
       watching.hls = hls;
       hls.on(Hls.Events.MANIFEST_PARSED, (event, data) => {
@@ -372,6 +373,7 @@
         video.play().catch(() => {});
       });
       hls.on(Hls.Events.ERROR, (event, data) => {
+        (watching.log = watching.log || []).push(`${data.type}/${data.details}${data.fatal ? " fatal" : ""}`);
         if (!data.fatal) return;
         if (data.type === Hls.ErrorTypes.NETWORK_ERROR) hls.startLoad();
         else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) hls.recoverMediaError();
@@ -578,5 +580,7 @@
       if (document.body) go(); else document.addEventListener("DOMContentLoaded", go, { once: true });
     },
     minutes,
+    debug: () => watching && { log: watching.log, levels: watching.hls?.levels?.map((l) => `${l.height}p${l.frameRate || ""}`),
+      level: watching.hls?.currentLevel, cap: watching.hls?.autoLevelCapping },
   };
 })();

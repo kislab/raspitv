@@ -142,7 +142,6 @@
       const { w } = await player(it);
       const mc = w?.mediaCollection?.embedded || w?.mediaCollection;
       if (!mc) throw new Error(w?.blockedByFsk ? "Erst ab 20 Uhr verfügbar (Jugendschutz)" : "kein Video gefunden");
-      if (mc.isGeoBlocked) throw new Error("Nur in Deutschland verfügbar");
       // normale Tonspur (nicht Audiodeskription, „Klare Sprache“ o. Ä.)
       const all = (mc.streams || []).filter((s) => s.kind === "main").flatMap((s) => s.media || []);
       const standard = all.filter((m) => (m.audios || []).every((a) => a.kind === "standard") && !/klaresprache|_AD_|audiodeskription/i.test(m.url || ""));
