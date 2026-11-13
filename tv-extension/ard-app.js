@@ -1,9 +1,12 @@
-// ARD Mediathek: Adapter für media-app.js. Inhalte aus der offenen Schnittstelle der ARD
+// ARD Mediathek (und 3sat, das die ARD-Schnittstelle als Partner führt): Adapter für media-app.js. Inhalte aus der offenen Schnittstelle der ARD
 // (api.ardmediathek.de/page-gateway), Live-Programm aus programm-api.ard.de, Videos als MP4 (bis 1080p)
 // bzw. HLS (Livestreams) im eigenen Player. Die ARD-Webseite selbst wird nicht geladen (media-boot.js).
 (() => {
   if (!window.MediaApp) return;
   const API = "https://api.ardmediathek.de/page-gateway";
+  // 3sat: gleiche Schnittstelle, eigener Partner-Bereich
+  const SAT = /(^|\.)3sat\.de$/.test(location.hostname);
+  const P = SAT ? "3sat" : "ard";
 
   async function get(url) {
     const r = await fetch(url, { headers: { accept: "application/json" } });
@@ -28,7 +31,7 @@
       img: pic(t.images?.aspect16x9, 640),
       poster: pic(t.images?.aspect3x4, 400) || pic(t.images?.aspect16x9, 640),
       duration: t.duration || 0,
-      href: href ? withEmbedded(href) : `${API}/pages/ard/item/${t.id}?embedded=true`,
+      href: href ? withEmbedded(href) : `${API}/pages/${P}/item/${t.id}?embedded=true`,
     };
   }
 
@@ -59,7 +62,7 @@
 
   async function live() {
     const now = await get("https://programm-api.ard.de/nownext/api/now");
-    const items = Object.values(now.channels || {}).map((c) => {
+    const items = Object.values(now.channels || {}).filter((c) => !SAT || /3sat/i.test(c.name)).map((c) => {
       const ev = (c.events || [])[0] || {};
       const pic = ev.image?.src || ev.image?.url || "";
       return {
@@ -79,18 +82,22 @@
 
   /** Videoseite → Abspiel-Widget */
   async function player(it) {
-    const page = await get(it.href.includes("/item/") ? it.href : `${API}/pages/ard/item/${it.id}?embedded=true&mcV6=true`);
+    const page = await get(it.href.includes("/item/") ? it.href : `${API}/pages/${P}/item/${it.id}?embedded=true&mcV6=true`);
     const w = (page.widgets || []).find((x) => /^player_/.test(x.type || ""));
     return { page, w };
   }
 
   MediaApp.start({
-    id: "ard",
-    name: "ARD Mediathek",
-    logo: "ARD Mediathek",
-    accent: "#2b6fd6",
+    id: P,
+    name: SAT ? "3sat" : "ARD Mediathek",
+    logo: SAT ? "3sat" : "ARD Mediathek",
+    accent: SAT ? "#e1001a" : "#2b6fd6",
     openVideos: true,
-    tabs: [
+    tabs: SAT ? [
+      { key: "home", label: "Start", icon: "home" },
+      { key: "live", label: "Live", icon: "live" },
+      { key: "search", label: "Suche", icon: "search", search: true },
+    ] : [
       { key: "home", label: "Start", icon: "home" },
       { key: "live", label: "Live", icon: "live" },
       { key: "filme", label: "Filme", icon: "movie" },
@@ -101,14 +108,14 @@
     ],
     async load(tab) {
       if (tab === "live") return live();
-      const url = tab === "home" ? `${API}/pages/ard/home?embedded=true` : `${API}/pages/ard/editorial/${EDITORIAL[tab]}?embedded=true`;
+      const url = tab === "home" ? `${API}/pages/${P}/home?embedded=true` : `${API}/pages/ard/editorial/${EDITORIAL[tab]}?embedded=true`;
       return { sections: sections(await get(url)) };
     },
     async search(term) {
       const q = encodeURIComponent(term);
       const [shows, vods] = await Promise.all([
-        get(`${API}/widgets/ard/search/grouping?searchString=${q}&pageSize=24`).catch(() => null),
-        get(`${API}/widgets/ard/search/vod?searchString=${q}&pageSize=48`).catch(() => null),
+        get(`${API}/widgets/${P}/search/grouping?searchString=${q}&pageSize=24`).catch(() => null),
+        get(`${API}/widgets/${P}/search/vod?searchString=${q}&pageSize=48`).catch(() => null),
       ]);
       return { sections: [
         { title: "Sendungen", layout: "wide", items: (shows?.teasers || []).map(item).filter(Boolean) },

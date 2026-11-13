@@ -8,7 +8,8 @@
     "condition": {
       "initiatorDomains": [
         "www.ardmediathek.de",
-        "www.zdf.de"
+        "www.zdf.de",
+        "www.3sat.de"
       ],
       "resourceTypes": [
         "script",
