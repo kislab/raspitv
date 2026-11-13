@@ -1,8 +1,11 @@
 // Netflix im Stil der Netflix-TV-App: eine komplett eigene Oberfläche über der Netflix-Webseite.
 //
-// Die Webseite läuft unsichtbar darunter weiter. Sie liefert die Daten (Reihen, Bilder, Folgen …),
-// und Aktionen wie "Abspielen" werden an ihre (versteckten) Elemente weitergereicht. Im Player
-// (/watch) und auf der Profilauswahl ist die eigene Oberfläche aus.
+// Die Webseite läuft unsichtbar darunter weiter. Die Inhalte (Startseite, Serien, Filme, Meine Liste,
+// Suche, Detailansicht mit Staffeln und Folgen) kommen direkt aus Netflix' GraphQL-Schnittstelle – über
+// die Brücke netflix-bridge.js, die die Abfragen der Seite selbst wiederverwendet. Nur „Neu und beliebt“
+// liest noch die versteckte Seite aus (dafür nutzt Netflix eine ältere Schnittstelle). Abgespielt wird,
+// indem die Seite zu /watch/<id> wechselt. Im Player (/watch) ist die eigene Oberfläche aus, Profilauswahl
+// und PIN zeigt sie selbst (Daten aus der Seite).
 (() => {
   if (!window.TV) return;
 
@@ -76,14 +79,299 @@
   // Linke Leiste: Ziele auf der Netflix-Seite (data-uia der versteckten Navigation)
   const NAV = [
     { id: "search", label: "Suche", icon: "search" },
-    { id: "home", label: "Startseite", icon: "home", uia: "nav-home", path: /^\/browse\/?$/ },
-    { id: "series", label: "Serien", icon: "series", uia: "nav-series", path: /^\/browse\/genre\/83/ },
-    { id: "movies", label: "Filme", icon: "movies", uia: "nav-movies", path: /^\/browse\/genre\/34399/ },
-    { id: "latest", label: "Neu und beliebt", icon: "latest", uia: "nav-latest", path: /^\/latest/ },
-    { id: "mylist", label: "Meine Liste", icon: "mylist", uia: "nav-myProfile", path: /^\/browse\/my-list/ },
+    { id: "home", label: "Startseite", icon: "home", uia: "nav-home", path: /^\/browse\/?$/, cat: null },
+    { id: "series", label: "Serien", icon: "series", uia: "nav-series", path: /^\/browse\/genre\/83/, cat: "genre-83" },
+    { id: "movies", label: "Filme", icon: "movies", uia: "nav-movies", path: /^\/browse\/genre\/34399/, cat: "genre-34399" },
+    { id: "latest", label: "Neu und beliebt", icon: "latest", uia: "nav-latest", path: /^\/latest/, cat: "latest" },
+    { id: "mylist", label: "Meine Liste", icon: "mylist", uia: "nav-myProfile", path: /^\/browse\/my-list/, cat: "myProfile" },
   ];
 
-  // ---------- Daten aus der Netflix-Seite ----------
+  // ---------- Daten aus Netflix' Schnittstelle (Brücke: netflix-bridge.js) ----------
+
+  let seq = 0;
+  const waiting = new Map();
+  window.addEventListener("message", (event) => {
+    if (event.source !== window || event.data?.tvnf !== "res") return;
+    const w = waiting.get(event.data.id);
+    if (!w) return;
+    waiting.delete(event.data.id);
+    if (event.data.ok) w.resolve(event.data.data); else w.reject(new Error(event.data.error));
+  });
+  function call(op, args) {
+    return new Promise((resolve, reject) => {
+      const id = ++seq;
+      waiting.set(id, { resolve, reject });
+      window.postMessage({ tvnf: "req", id, op, args }, "*");
+      setTimeout(() => { if (waiting.delete(id)) reject(new Error("Zeitüberschreitung")); }, 45000);
+    });
+  }
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  /** Abfrage stellen. Kennt die Brücke sie noch nicht (erster Start), die versteckte Seite einmal dorthin
+   *  schicken, wo Netflix sie selbst stellt (learnPath), bis die Brücke sie mitgeschnitten hat. */
+  async function q(name, vars, learnPath, policy) {
+    try {
+      return await call("q", { name, vars, policy });
+    } catch (error) {
+      if (!/unbekannt/.test(error.message) || !learnPath) throw error;
+      const back = location.pathname + location.search;
+      await call("nav", { path: learnPath });
+      for (let i = 0; i < 24; i++) {
+        await sleep(500);
+        const r = await call("ready").catch(() => null);
+        if (r && r.have.includes(name)) break;
+      }
+      await call("nav", { path: /^\/browse/.test(back) ? back.replace(/[?&]jbv=\d+/, "") : "/browse" }).catch(() => {});
+      return call("q", { name, vars, policy });
+    }
+  }
+
+  const cert = (adv) => (adv && adv.certificationValue ? `ab ${adv.certificationValue}` : "");
+  const minutes = (sec) => (sec ? (sec >= 3600 ? `${Math.floor(sec / 3600)} Std. ${Math.round((sec % 3600) / 60)} Min.` : `${Math.round(sec / 60)} Min.`) : "");
+
+  function apiCard(node, continueRow) {
+    const ue = node && node.unifiedEntity;
+    if (!ue || !ue.videoId) return null;
+    const art = node.contextualArtwork || {};
+    let progress = null;
+    if (continueRow) {
+      const ep = ue.currentEpisode || ue;
+      const pos = ep.bookmark && ep.bookmark.position;
+      if (pos != null && ep.runtimeSec) progress = pos / ep.runtimeSec;
+    }
+    return {
+      id: ue.videoId,
+      label: node.displayString || ue.title || "",
+      img: (art.artworkHighRes && art.artworkHighRes.url) || (art.artwork && art.artwork.url) || "",
+      progress,
+    };
+  }
+
+  function apiBillboard(ent) {
+    const pe = ent && ent.promotedEntity;
+    if (!pe) return null;
+    const show = pe.parentShow || pe;
+    const art = ent.contextualArtwork || {};
+    const id = show.videoId || pe.videoId;
+    if (!id) return null;
+    return {
+      id,
+      title: show.title || pe.title || "",
+      bg: (art.horizontalBackgroundImage && art.horizontalBackgroundImage.url) || "",
+      logo: (art.logoImage && art.logoImage.url) || "",
+      attrs: [show.releaseYear || pe.releaseYear, cert(pe.contentAdvisory), show.numSeasonsLabel].filter(Boolean).map(String),
+      synopsis: (ent.contextualSynopsis && ent.contextualSynopsis.text) || "",
+      callouts: ((ent.callouts && ent.callouts.inFocus) || []).map((c) => c.text).filter(Boolean),
+    };
+  }
+
+  /** Netflix-Seite (Abschnitte) → { billboard, rows } wie die eigene Oberfläche sie braucht */
+  function apiRows(page, firstTitle) {
+    let billboard = null;
+    const rows = [];
+    for (const edge of (page && page.sections && page.sections.edges) || []) {
+      const n = edge.node;
+      if (!n) continue;
+      if (n.__typename === "PinotSingleItemSection") {
+        if (!billboard) billboard = apiBillboard(n.entity);
+        continue;
+      }
+      const ents = (n.entities && n.entities.edges) || [];
+      const continueRow = ents.some((e) => /ContinueWatching/.test((e.node && e.node.__typename) || ""));
+      const cards = ents.map((e) => apiCard(e.node, continueRow)).filter((c) => c && c.img);
+      if (cards.length) rows.push({ title: n.displayString || (rows.length ? "" : firstTitle || ""), cards });
+    }
+    return { billboard, rows };
+  }
+
+  // Top-10-Reihen: wie alle anderen Karten im Querformat (Netflix liefert dort sonst Hochformat-Cover)
+  const LANDSCAPE = { imageParamsForRankedBoxart: { artworkType: "SDP", dimension: { width: 665, height: 375 },
+    features: { fallbackStrategy: "STILL", suppressTop10Badge: true } } };
+
+  const cache = {}; // Bereich → {at, home}: erneuter Wechsel ohne Warten
+  const FRESH_MS = 10 * 60 * 1000;
+  async function fetchHome(cat) {
+    let home;
+    if (cat === "latest") {
+      home = await latestRows();
+    } else {
+      const data = await q("GetBrowsePage", { ...LANDSCAPE, categoryId: cat, sectionCount: 30, carouselPageSize: 40 }, "/browse");
+      home = apiRows(data && data.page);
+    }
+    cache[String(cat)] = { at: Date.now(), home };
+    return home;
+  }
+  let preloaded = false;
+  async function loadHome(cat) {
+    const mine = (S.loadSeq = (S.loadSeq || 0) + 1);
+    S.homeLoading = true;
+    try {
+      const home = await fetchHome(cat);
+      if (mine !== S.loadSeq) return;
+      S.home = home;
+      S.homeFails = 0;
+      // „Neu und beliebt“ braucht drei große Abfragen: schon einmal im Hintergrund holen
+      if (!preloaded) { preloaded = true; setTimeout(() => fetchHome("latest").catch(() => {}), 8000); }
+    } catch (error) {
+      if (mine !== S.loadSeq) return;
+      // Seite noch nicht so weit (z. B. Profilauswahl): später erneut; nach vielen Fehlern die alte Art nutzen
+      if (++S.homeFails > 20) S.api = false;
+    } finally {
+      if (mine === S.loadSeq) S.homeLoading = false;
+    }
+  }
+
+  /** „Neu und beliebt“: Netflix' eigene Seite dafür lädt im Player-Browser nicht – stattdessen die Reihen mit
+   *  Neuheiten und Top 10 aus Startseite, Serien und Filmen */
+  async function latestRows() {
+    const pages = await Promise.all([null, "genre-83", "genre-34399"].map((cat) =>
+      q("GetBrowsePage", { ...LANDSCAPE, categoryId: cat, sectionCount: 34, carouselPageSize: 20 }, "/browse").catch(() => null)));
+    const [home, series, movies] = pages.map((d) => apiRows(d && d.page).rows);
+    const pick = (rows, re, title) => {
+      const row = (rows || []).find((r) => re.test(r.title));
+      return row && { title: title || row.title, cards: row.cards };
+    };
+    const rows = [
+      pick(series, /^Top-10-Serien/),
+      pick(movies, /^Top-10-Filme/),
+      pick(home, /^Neu auf Netflix/),
+      pick(series, /^Neu auf Netflix/, "Neue Serien"),
+      pick(movies, /^Neu auf Netflix/, "Neue Filme"),
+      pick(home, /^Top-Suchanfragen/),
+      pick(home, /^Publikumshits/) || pick(series, /^Publikumshits/),
+      pick(home, /^Heutige Top-Auswahl/),
+    ].filter((r) => r && r.cards.length);
+    return { billboard: null, rows };
+  }
+
+  async function search(term) {
+    const mine = (S.loadSeq = (S.loadSeq || 0) + 1);
+    S.home = null;
+    S.homeLoading = true;
+    try {
+      const data = await q("SearchPageQueryResults", { searchTerm: term }, `/search?q=${encodeURIComponent(term)}`);
+      if (mine !== S.loadSeq) return;
+      const result = apiRows(data && data.page, `Ergebnisse für „${term}“`);
+      if (!result.rows.length) result.rows.push({ title: `Keine Ergebnisse für „${term}“`, cards: [] });
+      S.home = result;
+    } catch (error) {
+      if (mine === S.loadSeq) S.home = { billboard: null, rows: [{ title: `Suche ging nicht (${error.message})`, cards: [] }] };
+    } finally {
+      if (mine === S.loadSeq) S.homeLoading = false;
+    }
+  }
+
+  async function loadSeason(seasonId, showTitle) {
+    const data = await q("PreviewModalEpisodeSelectorSeasonEpisodes", { seasonId, count: 80 });
+    const season = data && data.videos && data.videos[0];
+    return ((season && season.episodes && season.episodes.edges) || []).map((e) => e.node).filter(Boolean).map((ep) => ({
+      id: ep.videoId,
+      num: ep.number,
+      label: ep.title || "",
+      img: (ep.artwork && ep.artwork.url) || "",
+      progress: ep.bookmark && ep.bookmark.position > 0 && ep.runtimeSec ? ep.bookmark.position / ep.runtimeSec : null,
+      duration: minutes(ep.displayRuntimeSec || ep.runtimeSec),
+      synopsis: (ep.contextualSynopsis && ep.contextualSynopsis.text) || "",
+      run: () => playVideo(ep.videoId, `${showTitle} · ${ep.number}. ${ep.title || ""}`),
+    }));
+  }
+
+  async function loadDetail(id) {
+    const learn = `/browse?jbv=${id}`;
+    const dm = await q("DetailModal", { unifiedEntityId: `Video:${id}` }, learn);
+    const e = dm && dm.unifiedEntities && dm.unifiedEntities[0];
+    if (!e) throw new Error("Titel nicht gefunden");
+    const isShow = e.__typename === "Show";
+    const simIds = ((e.similars || []).map((x) => x.videoId)).filter(Boolean).slice(0, 25);
+    const [self, sims] = await Promise.all([
+      q("VideoDetailsModalSimilars", { videoIds: [id] }, learn).catch(() => null),
+      simIds.length ? q("VideoDetailsModalSimilars", { videoIds: simIds }, learn).catch(() => null) : null,
+    ]);
+    const me = self && self.videos && self.videos[0];
+    const cur = e.currentEpisode;
+    const pos = cur && cur.bookmark ? cur.bookmark.position : 0;
+    const d = {
+      key: id,
+      id,
+      title: e.title || "",
+      bg: (e.storyArt && e.storyArt.url) || (e.boxartHighRes && e.boxartHighRes.url) || "",
+      logo: (e.titleLogoUnbrandedStacked && e.titleLogoUnbrandedStacked.url) || (e.titleLogoBranded && e.titleLogoBranded.url) || "",
+      meta: [e.latestYear, cert(e.contentAdvisory),
+        isShow ? (e.seasons && e.seasons.totalCount ? `${e.seasons.totalCount} ${e.seasons.totalCount === 1 ? "Staffel" : "Staffeln"}` : "")
+          : minutes(cur ? cur.runtimeSec : 0)].filter(Boolean).map(String),
+      synopsis: (me && me.contextualSynopsis && me.contextualSynopsis.text) || (cur && cur.contextualSynopsis && cur.contextualSynopsis.text) || "",
+      progressText: "",
+      progress: null,
+      episodes: [],
+      similar: ((sims && sims.videos) || []).filter((v) => v && v.boxart && v.boxart.url).map((v) => ({
+        label: v.title || "", img: v.boxart.url, info: v.numSeasonsLabel || "",
+        run: () => openDetail(v.videoId),
+      })),
+      close: null,
+    };
+    if (isShow && cur && cur.parentSeason && pos > 0) {
+      d.progressText = `St. ${cur.parentSeason.number}: F. ${cur.number} „${cur.title || ""}“`;
+      if (cur.runtimeSec) d.progress = pos / cur.runtimeSec;
+    }
+    const playId = isShow ? (cur && cur.videoId) || id : id;
+    const playTitle = isShow && cur ? `${d.title} · ${cur.number}. ${cur.title || ""}` : d.title;
+    d.play = { label: pos > 0 ? "Fortsetzen" : "Abspielen", run: () => playVideo(playId, playTitle) };
+    d.myList = { added: !!e.isInPlaylist, toggle: () => toggleMyList(d) };
+    if (isShow) {
+      const sel = await q("PreviewModalEpisodeSelector", { showId: id, seasonCount: (e.seasons && e.seasons.totalCount) || 1 }, learn).catch(() => null);
+      const show = sel && sel.videos && sel.videos[0];
+      d.seasons = ((show && show.seasons && show.seasons.edges) || []).map((x) => x.node).filter(Boolean)
+        .map((s) => ({ id: s.videoId, label: s.title || "" }));
+      const current = d.seasons.find((s) => cur && cur.parentSeason && s.id === cur.parentSeason.videoId) || d.seasons[0];
+      if (current) {
+        if (d.seasons.length > 1) d.season = { label: current.label, id: current.id };
+        d.seasonLabel = current.label;
+        d.episodes = await loadSeason(current.id, d.title).catch(() => []);
+      }
+    }
+    return d;
+  }
+
+  function openDetail(id) {
+    if (!id) return;
+    S.returnZone = S.view === "detail" ? S.returnZone : S.zone;
+    S.detailId = id;
+    S.d = null;
+    const mine = id;
+    loadDetail(id).then((d) => {
+      if (S.detailId === mine) S.d = d;
+    }).catch((error) => {
+      if (S.detailId !== mine) return;
+      S.detailId = null;
+      S.lastError = error.message;
+    });
+  }
+
+  /** Meine Liste: Netflix' eigenen Knopf in der (versteckten) Detailansicht drücken */
+  async function toggleMyList(d) {
+    const back = location.pathname;
+    await call("nav", { path: `/browse?jbv=${d.id}` });
+    let button = null;
+    for (let i = 0; i < 20 && !button; i++) {
+      await sleep(300);
+      button = $("[data-uia^='add-to-my-list']");
+    }
+    if (button) {
+      button.click();
+      d.myList = { ...d.myList, added: !d.myList.added };
+      S.d = { ...d, myList: d.myList };
+      S.d.myList.toggle = () => toggleMyList(S.d);
+      await sleep(800);
+    }
+    await call("nav", { path: /^\/browse/.test(back) ? back : "/browse" }).catch(() => {});
+  }
+
+  function playVideo(id, title) {
+    rememberTitle(title);
+    call("nav", { path: `/watch/${id}` }).catch(() => { location.href = `/watch/${id}`; });
+  }
+
+  // ---------- Daten aus der Netflix-Seite („Neu und beliebt“, Profile) ----------
 
   const rowCache = new Map(); // Reihen-Überschrift -> bisher gesehene Karten (Karussell blättert nach)
 
@@ -161,7 +449,7 @@
     const logo = pics.find((p) => p !== bg && p.naturalWidth / Math.max(1, p.naturalHeight) > 1.3);
     const about = $$("h3, h4", m).map(text).find((t) => t.startsWith("Über "));
     const progressText = $$("*", player).map((e) => (e.children.length ? "" : text(e))).find((t) => /\d+ von \d+/.test(t));
-    const play = $("[data-uia='play-button']", m);
+    const playEl = $("[data-uia='play-button']", m);
     const myList = $("[data-uia^='add-to-my-list']", m);
     const season = $("[data-uia='dropdown-toggle']", m);
     const episodes = $$("[data-uia='episode-selector'] [data-uia='titleCard--container']", m).map((e) => ({
@@ -172,9 +460,11 @@
       progress: progressOf(e),
       duration: leaves(e).find((t) => /^\d+\s*(Min|Std)/.test(t)) || "",
     }));
+    const titleText = about ? about.slice(5) : (pics[0] && pics[0].alt) || "";
+    for (const ep of episodes) ep.run = () => play(ep.el, `${titleText} · ${ep.num}. ${ep.label}`);
     const similar = $$("[data-uia='titleCard--container']", m)
       .filter((e) => !e.closest("[data-uia='episode-selector'], [data-uia^='trailersAndMore']"))
-      .map((e) => ({ el: e, label: e.getAttribute("aria-label") || "", img: src($("img", e)), info: leaves(e).find((t) => /Staffel|Std|Min|Folge/.test(t)) || "" }));
+      .map((e) => ({ el: e, label: e.getAttribute("aria-label") || "", img: src($("img", e)), info: leaves(e).find((t) => /Staffel|Std|Min|Folge/.test(t)) || "", run: () => e.click() }));
 
     return {
       key: location.search,
@@ -185,8 +475,8 @@
       synopsis: text($("[data-uia='preview-modal-synopsis']", m)),
       progressText: progressText || "",
       progress: progressOf(player),
-      play: play && { el: play, label: play.getAttribute("aria-label") || "Abspielen" },
-      myList: myList && { el: myList, added: /added/.test(myList.dataset.uia) },
+      play: playEl && { el: playEl, label: playEl.getAttribute("aria-label") || "Abspielen", run: () => (rememberTitle(titleText), playEl.click()) },
+      myList: myList && { el: myList, added: /added/.test(myList.dataset.uia), toggle: () => myList.click() },
       season: season && { el: season, label: text(season) },
       episodes,
       similar,
@@ -222,6 +512,15 @@
     pin: "",           // bisher eingegebene PIN-Ziffern
     pinKey: 0,         // gewählte Taste auf dem Ziffernblock
     pinProfile: null,  // Profil, für das die PIN abgefragt wird
+    api: true,         // Daten aus der Schnittstelle (false: „Neu und beliebt“ aus der Seite)
+    navId: "home",     // gewählter Bereich der Leiste
+    cat: null,         // Kategorie der Schnittstelle (null = Startseite)
+    homeLoading: false,
+    homeFails: 0,
+    builtHome: null,   // zuletzt gebaute Daten (neu bauen, wenn sich S.home ändert)
+    detailId: null,    // geöffnete Detailansicht (Schnittstelle)
+    builtD: null,
+    watching: false,
   };
 
   const root = h("div");
@@ -233,6 +532,10 @@
     if (shown($("[data-uia='profile-gate-pin']"))) return "pin";
     if (shown($("[data-uia='profile-gate-screen'], [data-uia='profile-selector']"))) return "profiles";
     // Nach einem Wechsel über die Leiste: Ladebildschirm, bis die neue Seite da ist
+    if (S.api && /^\/(browse|latest|search)/.test(location.pathname)) {
+      if (S.detailId) return S.d ? "detail" : "loading";
+      return S.home ? "home" : "loading";
+    }
     if (S.navTarget && Date.now() - S.navAt < 8000 && (!S.navTarget.test(location.pathname) || Date.now() - S.navAt < 900)) return "loading";
     // Nach "Zurück" schließt Netflix die Detailansicht mit einer Animation – solange gilt schon die Startseite
     // Offene Detailansicht steht als ?jbv=… in der Adresse; das Element bleibt nach dem Schließen noch kurz stehen.
@@ -247,6 +550,8 @@
 
   TV.site.takeover = () => !!S.view;
   TV.netflix = S; // Zustand für Tests (dev/cdp.py --ext 'TV.netflix')
+  TV.netflixOpen = (id) => openDetail(id); // für Tests
+  TV.netflixNav = (id) => navigate(NAV.find((n) => n.id === id)); // für Tests
 
   // ---------- Startseite ----------
 
@@ -357,7 +662,7 @@
     root.classList.toggle("nf-in-rows", inRows || !hasHero);
     dom.rail.classList.toggle("nf-rail-open", S.zone === "nav");
     root.classList.toggle("nf-nav-open", S.zone === "nav");
-    const active = NAV.findIndex((n) => n.path && n.path.test(location.pathname));
+    const active = activeNav();
     dom.nav.forEach((el, i) => {
       el.classList.toggle("nf-on", S.zone === "nav" && i === S.nav);
       el.classList.toggle("nf-active", i === active);
@@ -409,8 +714,11 @@
       else if (key === "left" || key === "right") S.heroBtn = clamp(S.heroBtn + (key === "left" ? -1 : 1), 0, 1);
       else if (key === "down" && rows.length) (S.zone = "rows"), (S.row = 0);
       else if (key === "up") openNav("hero");
-      else if (key === "back") TV.home();
-      else if (key === "ok") {
+      else if (key === "back") (S.api && S.navId !== "home" ? navigate(NAV[1]) : TV.home());
+      else if (key === "ok" && S.api) {
+        if (S.heroBtn === 0) playVideo(billboard.id, billboard.title);
+        else openDetail(billboard.id);
+      } else if (key === "ok") {
         const target = $(S.heroBtn === 0 ? "[data-uia='play-video-button']" : "[data-uia='billboard-more-info']");
         if (S.heroBtn === 0) rememberTitle(billboard.title || "");
         if (target) target.click();
@@ -423,15 +731,16 @@
         else S.cols[S.row] = col - 1;
       } else if (key === "right") {
         if (col < row.cards.length - 1) S.cols[S.row] = col + 1;
-        if (col >= row.cards.length - 3) loadMoreCards(S.row); // Karussell im Hintergrund nachladen
+        if (col >= row.cards.length - 3 && !S.api) loadMoreCards(S.row); // Karussell im Hintergrund nachladen
       } else if (key === "up") {
         if (S.row > 0) S.row--;
         else if (billboard) S.zone = "hero";
       } else if (key === "down") {
         if (S.row < rows.length - 1) S.row++;
-        if (S.row >= rows.length - 3) window.scrollTo(0, document.documentElement.scrollHeight); // weitere Reihen laden
+        if (S.row >= rows.length - 3 && !S.api) window.scrollTo(0, document.documentElement.scrollHeight); // weitere Reihen laden
       } else if (key === "back") {
         if (billboard) (S.zone = "hero"), (S.row = 0);
+        else if (S.navId !== "home" || !S.api) navigate(NAV[1]);
         else TV.home();
       } else if (key === "ok") {
         openCard(row.cards[col]);
@@ -440,15 +749,39 @@
     renderHome();
   }
 
+  function activeNav() {
+    if (S.api) return S.navId === "search" ? 0 : NAV.findIndex((n) => n.id === S.navId);
+    return NAV.findIndex((n) => n.path && n.path.test(location.pathname));
+  }
+
   function openNav(from) {
     S.returnZone = from;
     S.zone = "nav";
-    const active = NAV.findIndex((n) => n.path && n.path.test(location.pathname));
+    const active = activeNav();
     S.nav = active >= 0 ? active : 1;
   }
 
   function navigate(item) {
     if (item.id === "search") return openSearch();
+    if (item.cat !== undefined) {
+      // Schnittstelle: versteckte Seite bleibt auf der Startseite
+      S.api = true;
+      S.navId = item.id;
+      S.cat = item.cat;
+      S.home = null;
+      S.detailId = null;
+      S.zone = "hero";
+      S.returnZone = null;
+      S.row = 0;
+      S.cols = [];
+      if (!/^\/browse\/?$/.test(location.pathname)) call("nav", { path: "/browse" }).catch(() => {});
+      const known = cache[String(item.cat)];
+      if (known && Date.now() - known.at < FRESH_MS) S.home = known.home;
+      else loadHome(item.cat);
+      return;
+    }
+    S.api = false;
+    S.navId = item.id;
     const link = $(`[data-uia='${item.uia}']`);
     S.zone = "hero";
     S.returnZone = null;
@@ -468,7 +801,16 @@
     root.append(input);
     TV.keyboard(input, (value) => {
       input.remove();
-      if (value.trim()) location.href = `/search?q=${encodeURIComponent(value.trim())}`;
+      const term = value.trim();
+      if (!term) return;
+      if (!S.api) return void (location.href = `/search?q=${encodeURIComponent(term)}`);
+      S.navId = "search";
+      S.detailId = null;
+      S.zone = "rows";
+      S.returnZone = null;
+      S.row = 0;
+      S.cols = [];
+      search(term);
     });
   }
 
@@ -481,6 +823,7 @@
   function openCard(card) {
     if (!card) return;
     S.returnZone = "rows";
+    if (S.api) return openDetail(card.id);
     const el = $$(`a[href]`).find((a) => a.getAttribute("href") === card.href);
     if (el) el.click();
     else location.href = card.href;
@@ -524,9 +867,9 @@
       b.onclick = () => action();
       dom.dButtons.push({ el: b, action });
     };
-    if (d.play) addButton("play", d.play.label, () => play(d.play.el, d.title), true);
+    if (d.play) addButton("play", d.play.label, () => d.play.run(), true);
     if (d.season) addButton("down", d.season.label, openPicker);
-    if (d.myList) addButton(d.myList.added ? "check" : "mylist", "Meine Liste", () => d.myList.el.click());
+    if (d.myList) addButton(d.myList.added ? "check" : "mylist", "Meine Liste", () => d.myList.toggle());
     info.append(buttons);
     page.append(info);
 
@@ -548,7 +891,7 @@
       rowsEl.append(rowEl);
       dom.dRows.push({ el: rowEl, track, cards, items, action, step: cards[0] && cards[0].classList.contains("nf-ep") ? EP_STEP : CARD_STEP });
     };
-    addRow(d.season ? `Folgen – ${d.season.label}` : "Folgen", d.episodes, (ep) => {
+    addRow(d.season || d.seasonLabel ? `Folgen – ${(d.season && d.season.label) || d.seasonLabel}` : "Folgen", d.episodes, (ep) => {
       const c = h("div", "nf-card nf-ep");
       const pic = h("div", "nf-ep-pic");
       pic.append(img(ep.img, "nf-card-img"));
@@ -561,14 +904,14 @@
       }
       c.append(pic, h("div", "nf-ep-title", `${ep.num}. ${ep.label}`), h("div", "nf-ep-sub", ep.duration));
       return c;
-    }, (ep) => play(ep.el, `${d.title} · ${ep.num}. ${ep.label}`));
+    }, (ep) => ep.run());
     addRow("Ähnliche Titel", d.similar, (s) => {
       const c = h("div", "nf-card");
       c.append(img(s.img, "nf-card-img"));
       return c;
     }, (s) => {
       S.dZone = "buttons";
-      s.el.click();
+      s.run();
     });
     page.append(rowsEl);
     dom.dRowsEl = rowsEl;
@@ -637,6 +980,18 @@
 
   function closeDetail() {
     S.picker = null;
+    if (S.api) {
+      S.detailId = null;
+      S.d = null;
+      if (S.home) {
+        S.view = "home";
+        S.zone = S.returnZone || S.zone;
+        buildHome();
+        S.builtHome = S.home;
+        renderHome();
+      }
+      return;
+    }
     S.closedAt = Date.now();
     if (S.home) {
       S.view = "home";
@@ -649,6 +1004,11 @@
   }
 
   function openPicker() {
+    if (S.d.seasons) {
+      const index = Math.max(0, S.d.seasons.findIndex((s) => s.id === S.d.season.id));
+      S.picker = { options: S.d.seasons, index };
+      return renderDetail();
+    }
     const toggle = S.d.season.el;
     toggle.click(); // Netflix-Menü (versteckt) öffnen, um die Staffeln auszulesen
     setTimeout(() => {
@@ -669,7 +1029,18 @@
     else if (key === "down") p.index = Math.min(p.options.length - 1, p.index + 1);
     else if (key === "back") {
       S.picker = null;
-      S.d.season.el.click(); // Netflix-Menü wieder schließen
+      if (S.d.season.el) S.d.season.el.click(); // Netflix-Menü wieder schließen
+    } else if (key === "ok" && S.d.seasons) {
+      const chosen = p.options[p.index];
+      S.picker = null;
+      const d = S.d;
+      loadSeason(chosen.id, d.title).then((episodes) => {
+        if (S.d !== d) return;
+        S.d = { ...d, episodes, season: { label: chosen.label, id: chosen.id } };
+        S.dZone = "rows";
+        S.dRow = 0;
+        S.dCols[0] = 0;
+      }).catch(() => {});
     } else if (key === "ok") {
       p.options[p.index].el.click();
       S.picker = null;
@@ -868,7 +1239,45 @@
       }
     }
 
-    if (view === "home") {
+    // Aus dem Player zurück: Fortschritt neu laden (Weiterschauen, Folgen)
+    const watching = location.pathname.startsWith("/watch");
+    if (S.watching && !watching && S.api) {
+      if (S.detailId) {
+        const id = S.detailId;
+        loadDetail(id).then((d) => { if (S.detailId === id) S.d = d; }).catch(() => {});
+      }
+      if (S.navId !== "search") loadHome(S.cat);
+    }
+    S.watching = watching;
+
+    if (S.api && (view === "home" || view === "loading") && !S.home && !S.homeLoading && S.navId !== "search" &&
+        !/^\/(watch|ProfilesGate)/.test(location.pathname)) loadHome(S.cat);
+
+    if (view === "home" && S.api) {
+      if (S.view !== "home" || S.builtHome !== S.home) {
+        if (S.view === "detail" && S.returnZone) S.zone = S.returnZone;
+        if (S.builtHome && S.builtHome !== S.home && S.view === "home") {
+          // gleiche Seite neu geladen (z. B. nach dem Player): Position behalten, soweit möglich
+        }
+        buildHome();
+        S.builtHome = S.home;
+      }
+      S.view = "home";
+      renderHome();
+    } else if (view === "detail" && S.api) {
+      if (S.view !== "detail" || S.builtD !== S.d) {
+        if (S.view !== "detail" || (S.builtD && S.builtD.key !== S.d.key)) {
+          S.dZone = "buttons";
+          S.dBtn = 0;
+          S.dRow = 0;
+          S.dCols = [0, 0];
+        }
+        buildDetail();
+        S.builtD = S.d;
+      }
+      S.view = "detail";
+      renderDetail();
+    } else if (view === "home") {
       const data = readHome();
       const sig = JSON.stringify([data.billboard && data.billboard.bg, data.rows.map((r) => [r.title, r.cards.length, r.cards.map((c) => c.progress)])]);
       if (S.view !== "home" || sig !== S.homeSig) {
@@ -893,6 +1302,7 @@
         S.d = data;
         S.dSig = sig;
         buildDetail();
+        S.builtD = data;
       }
       S.view = "detail";
       renderDetail();
