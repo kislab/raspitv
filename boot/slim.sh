@@ -20,7 +20,7 @@ PACKAGES="cloud-init rpi-cloud-init-mods cups cups-browsed cups-daemon cups-clie
 # Was RaspiTV (und der Desktop) braucht, darf beim Aufräumen der Abhängigkeiten nie mitgehen
 KEEP="git python3 python3-pyqt5 python3-pyqt5.qtquick qml-module-qtquick2 qml-module-qtquick-window2
   qml-module-qtgraphicaleffects mpv chromium libwidevinecdm0 lxterminal libqrencode4 fonts-noto-color-emoji
-  sound-theme-freedesktop libcanberra0 libadwaita-1-0 libaribb24-0t64 wlr-randr grim labwc wf-panel-pi pcmanfm
+  sound-theme-freedesktop libcanberra0 libadwaita-1-0 libaribb24-0t64 wlr-randr grim labwc wf-panel-pi pcmanfm-pi
   rpi-connect tailscale"
 # Dienste: Warten aufs Netz beim Start (RaspiTV wartet selbst höchstens 5 s), NFS, Pi-5-/X11-Tests, System-VNC,
 # tägliche Paket-Downloads und Handbuch-Index im Hintergrund
