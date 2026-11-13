@@ -11,6 +11,7 @@ Fernbedienungen speisen dieselben Tasten über remote.py ein.
 import json
 import os
 import signal
+import select
 import subprocess
 import sys
 import threading
@@ -888,9 +889,53 @@ class Home(AccountsUI, JellyfinUI, QObject):
         """Hintergrund: neue Bluetooth-/USB-Geräte (Kopfhörer, Lautsprecher) automatisch verwenden und
         zum selbst gewählten Ausgang zurückkehren, wenn so ein Gerät wieder weg ist."""
         known = {o["name"] for o in cfg.audio_outputs()}
+        # PipeWire meldet Änderungen selbst (pw-dump --monitor) – statt alle 2 s die ganze Übersicht abzufragen
+        # (kostete dauerhaft 2–3 % CPU). Nach einer Meldung kurz warten, dann einmal nachsehen.
+        monitor = None
+        try:
+            monitor = subprocess.Popen(["pw-dump", "--monitor", "--no-colors"], stdout=subprocess.PIPE,
+                                       stderr=subprocess.DEVNULL)
+        except OSError:
+            pass
+        decoder = json.JSONDecoder()
+        buf = ""
+        sinks = {o["id"] for o in cfg.audio_outputs()}
+
+        def sink_changed(chunk):
+            # nur Audio-Ausgänge zählen – nicht z. B. unsere eigenen pw-dump-Aufrufe, die sich als Programm
+            # an- und abmelden (sonst Rückkopplung)
+            for obj in chunk if isinstance(chunk, list) else []:
+                info = obj.get("info")
+                if info is None and obj.get("id") in sinks:
+                    return True  # Ausgang verschwunden
+                if obj.get("type") == "PipeWire:Interface:Node" and \
+                        ((info or {}).get("props") or {}).get("media.class") == "Audio/Sink":
+                    return True
+            return False
+
         while True:
-            time.sleep(2)
+            if monitor and monitor.poll() is None:
+                if not select.select([monitor.stdout], [], [], 60)[0]:
+                    continue
+                buf += monitor.stdout.read1(1 << 20).decode("utf-8", "replace")
+                changed = False
+                while True:  # vollständige JSON-Blöcke aus dem Strom lesen
+                    buf = buf.lstrip()
+                    try:
+                        chunk, end = decoder.raw_decode(buf)
+                    except ValueError:
+                        break
+                    buf = buf[end:]
+                    changed = changed or sink_changed(chunk)
+                if len(buf) > 1 << 22:
+                    buf = ""
+                if not changed:
+                    continue
+                time.sleep(1)
+            else:
+                time.sleep(2)
             outputs = cfg.audio_outputs()
+            sinks = {o["id"] for o in outputs}
             names = {o["name"] for o in outputs}
             if not outputs or names == known:
                 continue
