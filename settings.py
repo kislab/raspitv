@@ -145,7 +145,13 @@ def _set_boot_splash(enabled):
             'shown="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/raspitv-splash-shown"; rm -f "$shown"; i=0\n'
             f"python3 '{ROOT}/splash.py' &\n"
             'while [ ! -e "$shown" ] && [ $i -lt 30 ]; do sleep 0.1; i=$((i+1)); done\n'
-            f". '{previous}'\n"
+            + (f". '{previous}'\n" if previous == LABWC_BACKUP else
+               # Raspberry Pi OS startet labwc mit -m: dann führt labwc den System-Autostart selbst aus –
+               # ein zweiter Aufruf hier startete Leiste, Desktop usw. doppelt (die Kopien starten sich dann
+               # jede Sekunde neu). Nur ohne -m hier aufrufen.
+               "if ! tr '\\0' ' ' < /proc/$PPID/cmdline | grep -qE ' (-m|--merge-config)( |$)'; then\n"
+               f"  . '{previous}'\n"
+               "fi\n")
         ))
         if not rc:
             rc = '<?xml version="1.0"?>\n<openbox_config xmlns="http://openbox.org/3.4/rc">\n</openbox_config>\n'
