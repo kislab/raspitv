@@ -1,0 +1,115 @@
+/* Baukasten für eigene Mediatheken-Oberflächen (media-app.js). Gestaltet für 1536 × 864 CSS-Pixel
+   (1080p mit "scale": 1.25 in apps.json). Die Akzentfarbe setzt der Adapter (--accent). */
+
+html.tvm-app, html.tvm-app body { margin: 0; overflow: hidden; background: #0d0f14 !important; cursor: none; }
+/* Inhalt der eigentlichen Webseite (ohne ihre Skripte nur ein Gerüst) nicht zeichnen */
+html.tvm-app body > :not(.tvm):not(.tvm-player):not(.tvm-video) { display: none !important; }
+html.tvm-app #tv-ring { display: none !important; }
+
+.tvm {
+  --text: #f2f3f5; --muted: #a9adb8; --card: #1c1f27;
+  position: fixed; inset: 0; overflow: clip; color: var(--text); background: #0d0f14;
+  font-family: Inter, "Noto Sans", "Helvetica Neue", Arial, sans-serif; -webkit-font-smoothing: antialiased;
+}
+.tvm--hidden { visibility: hidden; }
+:where(.tvm) button { font: inherit; color: inherit; border: none; background: none; padding: 0; margin: 0; text-align: left; outline: none !important; }
+.tvm img { display: block; }
+.tvm img.is-empty { background: #262a33; }
+
+/* Hintergrund: Bild des gewählten Eintrags rechts oben, nach links und unten ausgeblendet */
+.tvm-bg { position: absolute; right: 0; top: 0; width: 68%; height: 72%; background-size: cover; background-position: center 30%; opacity: .55;
+  -webkit-mask-image: linear-gradient(90deg, transparent 0%, rgba(0,0,0,.4) 30%, #000 65%), linear-gradient(0deg, transparent 0%, #000 50%);
+  -webkit-mask-composite: source-in; mask-composite: intersect; pointer-events: none; transition: background-image .2s; }
+.tvm--detail .tvm-bg { opacity: .7; height: 82%; }
+
+/* ---------- Leiste oben ---------- */
+.tvm-header { position: absolute; left: 0; right: 0; top: 0; height: 92px; display: grid; grid-template-columns: 240px 1fr 240px;
+  align-items: center; padding: 0 64px; z-index: 2; }
+.tvm-logo { height: 40px; display: flex; align-items: center; font-size: 26px; font-weight: 800; letter-spacing: -.01em; }
+.tvm-logo svg { height: 38px; width: auto; }
+.tvm-pills { justify-self: center; display: flex; gap: 6px; padding: 6px; border-radius: 999px; background: rgba(255,255,255,.08); }
+.tvm-pill { display: flex !important; align-items: center; gap: 9px; padding: 10px 20px !important; border-radius: 999px;
+  font-size: 18px; font-weight: 600; color: var(--muted) !important; white-space: nowrap; }
+.tvm-pill__icon { width: 20px; height: 20px; }
+.tvm-pill.is-selected { color: #fff !important; background: rgba(255,255,255,.14) !important; }
+.tvm-pill.tv-focus { color: #fff !important; background: var(--accent) !important; }
+
+/* ---------- Seite ---------- */
+.tvm-page { position: absolute; left: 0; right: 0; top: 92px; bottom: 0; overflow: clip; }
+.tvm-scroll { padding: 10px 64px 80px; will-change: transform; transition: transform .18s ease-out; position: relative; }
+.tvm-loading { position: absolute; left: 0; right: 0; top: 200px; display: grid; place-items: center; }
+.tvm-empty, .tvm-error { padding: 60px 0; text-align: center; font-size: 20px; color: var(--muted); }
+.tvm-error { color: #f28b82; }
+.tvm-spinner { width: 56px; height: 56px; border-radius: 50%; border: 5px solid rgba(255,255,255,.15); border-top-color: var(--accent, #fff);
+  animation: tvm-spin .9s linear infinite; }
+.tvm-spinner--small { width: 36px; height: 36px; border-width: 4px; margin: 30px auto; }
+@keyframes tvm-spin { to { transform: rotate(360deg); } }
+
+.tvm-hero { height: 250px; max-width: 760px; display: flex; flex-direction: column; justify-content: flex-end; padding-bottom: 26px; }
+.tvm-hero__title { font-size: 40px; font-weight: 800; line-height: 1.12; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.tvm-hero__meta { margin-top: 10px; font-size: 18px; color: var(--muted); }
+.tvm-hero__desc { margin-top: 10px; font-size: 18px; line-height: 1.45; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; color: #d8dbe2; }
+
+/* Reihen */
+.tvm-shelf { margin-bottom: 28px; }
+.tvm-shelf__title { font-size: 23px; font-weight: 700; margin: 0 0 10px; }
+.tvm-clip { overflow: clip; overflow-clip-margin: 20px; margin: 0 -64px; padding: 0 64px; }
+.tvm-row { display: flex; gap: 20px; padding: 8px 0 10px; transition: transform .18s ease-out; }
+.tvm-grid { display: flex; flex-wrap: wrap; gap: 26px 20px; padding: 8px 0 20px; }
+
+/* Karten */
+.tvm-card { flex: 0 0 auto; display: block !important; width: 336px; }
+.tvm-card__pic { position: relative; width: 100%; aspect-ratio: 16 / 9; border-radius: 10px; overflow: hidden; background: var(--card); }
+.tvm-card__img { width: 100%; height: 100%; object-fit: cover; }
+.tvm-card--poster { width: 200px; }
+.tvm-card--poster .tvm-card__pic { aspect-ratio: 3 / 4; }
+.tvm-card--live { width: 280px; }
+.tvm-card.tv-focus .tvm-card__pic { box-shadow: 0 0 0 4px #fff, 0 16px 36px rgba(0,0,0,.6); }
+.tvm-card__title { margin-top: 10px; font-size: 17px; font-weight: 600; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tvm-card__sub { margin-top: 2px; font-size: 15px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tvm-card.tv-focus .tvm-card__title { color: #fff; }
+.tvm-card__bar { position: absolute; left: 10px; right: 10px; bottom: 8px; height: 5px; border-radius: 3px; background: rgba(255,255,255,.3); overflow: hidden; }
+.tvm-card__bar > div { height: 100%; background: var(--accent); }
+.tvm-badge { position: absolute; padding: 2px 8px; border-radius: 5px; font-size: 13px; font-weight: 700; line-height: 1.4; }
+.tvm-badge--live { left: 10px; top: 10px; background: #e3001b; color: #fff; letter-spacing: .03em; }
+.tvm-badge--time { right: 10px; bottom: 10px; background: rgba(0,0,0,.72); color: #fff; font-weight: 600; }
+.tvm-card__bar ~ .tvm-badge--time { bottom: 18px; }
+
+/* Detailseite */
+.tvm-detail { max-width: 860px; padding: 120px 0 26px; }
+.tvm-detail__title { font-size: 42px; font-weight: 800; line-height: 1.12; margin: 0; }
+.tvm-detail__meta { margin-top: 12px; font-size: 18px; color: var(--muted); }
+.tvm-detail__desc { margin-top: 14px; font-size: 18px; line-height: 1.5; color: #d8dbe2; display: -webkit-box; -webkit-line-clamp: 5; -webkit-box-orient: vertical; overflow: hidden; }
+.tvm-actions { display: flex; gap: 14px; margin-top: 24px; }
+.tvm-btn { display: inline-flex !important; align-items: center; gap: 10px; padding: 13px 26px !important; border-radius: 8px;
+  font-size: 18px; font-weight: 600; background: rgba(255,255,255,.14) !important; }
+.tvm-btn--primary { background: var(--accent) !important; }
+.tvm-btn__icon { width: 22px; height: 22px; }
+.tvm-btn.tv-focus { background: #fff !important; color: #0d0f14 !important; }
+
+/* Suche */
+.tvm-search { display: flex; align-items: center; gap: 14px; max-width: 760px; margin: 10px auto 30px; padding: 0 22px;
+  height: 60px; border-radius: 12px; background: rgba(255,255,255,.08); }
+.tvm-search__icon { width: 24px; height: 24px; color: var(--muted); }
+.tvm-search__input { flex: 1; height: 100%; border: none; background: none; outline: none; color: var(--text); font: inherit; font-size: 20px; }
+.tvm-search:has(.tv-focus) { box-shadow: 0 0 0 3px var(--accent); }
+
+/* ---------- Player ---------- */
+.tvm-video { position: fixed; inset: 0; width: 100vw; height: 100vh; z-index: 2147482000; background: #000; }
+.tvm-player { position: fixed; inset: 0; z-index: 2147483000; pointer-events: none;
+  font-family: Inter, "Noto Sans", "Helvetica Neue", Arial, sans-serif; color: #fff; -webkit-font-smoothing: antialiased; }
+.tvm-video::cue { font-size: 34px; background: rgba(0,0,0,.6); }
+.tvm-wait { position: absolute; inset: 0; display: none; place-items: center; }
+.tvm-wait.is-on { display: grid; }
+.tvm-bar { position: absolute; left: 0; right: 0; bottom: 0; padding: 140px 64px 40px; background: linear-gradient(transparent, rgba(0,0,0,.85) 60%);
+  opacity: 0; transform: translateY(20px); transition: opacity .25s, transform .25s; }
+.tvm-bar.is-on { opacity: 1; transform: none; }
+.tvm-bar__title { font-size: 32px; font-weight: 800; }
+.tvm-bar__sub { margin-top: 4px; font-size: 19px; color: #c9ccd4; }
+.tvm-bar__row { display: flex; align-items: center; gap: 18px; margin-top: 22px; font-size: 18px; font-variant-numeric: tabular-nums; }
+.tvm-bar__state svg { width: 34px; height: 34px; display: block; }
+.tvm-bar__track { flex: 1; height: 6px; border-radius: 99px; background: rgba(255,255,255,.25); overflow: hidden; }
+.tvm-bar__fill { height: 100%; width: 0; background: #fff; }
+.tvm-bar__row.is-live .tvm-bar__track, .tvm-bar__row.is-live .tvm-bar__end { visibility: hidden; }
+.tvm-bar__row.is-live .tvm-bar__time:first-of-type { padding: 2px 8px; border-radius: 5px; background: #e3001b; font-weight: 700; font-size: 15px; }
+.tvm-bar__hint { margin-top: 16px; font-size: 16px; color: #a9adb8; }

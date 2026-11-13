@@ -268,14 +268,20 @@
   function measureVideo(video) {
     if (measuring.has(video) || typeof video.requestVideoFrameCallback !== "function") return;
     measuring.add(video);
+    // Kurz messen und sicher aufhören: Solange requestVideoFrameCallback läuft, verwirft Chromium auf dem Pi
+    // die Bilder (gemessen: 300 von 300). Die alte Messung wartete auf 60 lückenlose Bilder – fehlten anfangs
+    // Bilder, maß sie endlos weiter und das Video ruckelte dauerhaft.
     const times = [];
-    let last = null;
+    let last = null, calls = 0;
     const step = (now, meta) => {
-      if (last !== null && meta.presentedFrames === last.frames + 1) times.push(meta.mediaTime - last.time);
-      last = { time: meta.mediaTime, frames: meta.presentedFrames };
-      if (times.length < 60) return void video.requestVideoFrameCallback(step);
+      const dt = last === null ? 0 : meta.mediaTime - last;
+      if (dt > 0.008 && dt < 0.1) times.push(dt);
+      last = meta.mediaTime;
+      if (++calls < 90 && times.length < 40) return void video.requestVideoFrameCallback(step);
+      if (times.length < 10) return void setTimeout(() => measuring.delete(video), 20000); // später erneut
+      // kürzester häufiger Abstand = ein Bild (längere Abstände: dazwischen fehlte ein Bild)
       times.sort((a, b) => a - b);
-      const fps = 1 / times[times.length >> 1];
+      const fps = 1 / times[Math.floor(times.length * 0.25)];
       const rate = RATES.reduce((best, r) => (Math.abs(r - fps) < Math.abs(best - fps) ? r : best));
       if (Math.abs(rate - fps) / rate < 0.03) {
         rates.set(video, rate);

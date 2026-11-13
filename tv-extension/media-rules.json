@@ -1,0 +1,11 @@
+[
+  {
+    "id": 1,
+    "priority": 1,
+    "action": { "type": "block" },
+    "condition": {
+      "initiatorDomains": ["www.ardmediathek.de"],
+      "resourceTypes": ["script", "sub_frame"]
+    }
+  }
+]

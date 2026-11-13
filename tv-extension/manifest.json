@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "RaspiTV Bedienung",
-  "version": "2.5",
+  "version": "2.7",
   "description": "Macht Streaming-Webseiten im RaspiTV-Player mit der Fernbedienung bedienbar.",
   "host_permissions": [
     "http://127.0.0.1:8765/*"
@@ -35,7 +35,6 @@
         "https://www.youtube.com/*",
         "https://m.youtube.com/*",
         "https://www.twitch.tv/*",
-        "https://www.ardmediathek.de/*",
         "https://www.zdf.de/*"
       ],
       "js": [
@@ -168,7 +167,8 @@
         "https://www.primevideo.com/*",
         "https://music.apple.com/*",
         "https://open.spotify.com/*",
-        "https://www.twitch.tv/*"
+        "https://www.twitch.tv/*",
+        "https://www.ardmediathek.de/*"
       ],
       "js": [
         "phone-text.js"
@@ -213,6 +213,35 @@
         "twitch-app.css"
       ],
       "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://www.ardmediathek.de/*"
+      ],
+      "js": [
+        "media-boot.js",
+        "tv.js",
+        "vendor/hls.min.js",
+        "media-app.js",
+        "ard-app.js"
+      ],
+      "css": [
+        "tv.css",
+        "media-app.css"
+      ],
+      "run_at": "document_start"
     }
-  ]
+  ],
+  "permissions": [
+    "declarativeNetRequest"
+  ],
+  "declarative_net_request": {
+    "rule_resources": [
+      {
+        "id": "media",
+        "enabled": true,
+        "path": "media-rules.json"
+      }
+    ]
+  }
 }
