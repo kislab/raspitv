@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "RaspiTV Bedienung",
-  "version": "2.3",
+  "version": "2.4",
   "description": "Macht Streaming-Webseiten im RaspiTV-Player mit der Fernbedienung bedienbar.",
   "host_permissions": [
     "http://127.0.0.1:8765/*"
@@ -166,7 +166,8 @@
         "https://www.disneyplus.com/*",
         "https://www.primevideo.com/*",
         "https://music.apple.com/*",
-        "https://open.spotify.com/*"
+        "https://open.spotify.com/*",
+        "https://www.twitch.tv/*"
       ],
       "js": [
         "phone-text.js"
@@ -195,6 +196,20 @@
         "tv.css",
         "applemusic-app.css",
         "spotify-app.css"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://www.twitch.tv/*"
+      ],
+      "js": [
+        "tv.js",
+        "twitch-app.js"
+      ],
+      "css": [
+        "tv.css",
+        "twitch-app.css"
       ],
       "run_at": "document_idle"
     }

@@ -1,0 +1,166 @@
+/* Twitch: eigene TV-Oberfläche (twitch-app.js). Werte in CSS-Pixeln; der Player vergrößert die Seite um 1,25
+   (apps.json "scale"), gestaltet für 1536 × 864. Farben wie bei Twitch (dunkles Design, Lila). */
+
+/* Twitchs Seite lädt im Hintergrund, wird aber nicht gezeichnet */
+html.tvtw-app:not(.tvtw-watch) body { content-visibility: hidden !important; }
+html.tvtw-app, html.tvtw-app body { overflow: hidden !important; background: #0e0e10 !important; cursor: none !important; }
+html.tvtw-app #tv-ring { display: none !important; }
+
+.tvtw {
+  --purple: #9146ff; --purple-l: #a970ff; --text: #efeff1; --muted: #adadb8; --card: #1f1f23; --live: #eb0400;
+  position: fixed; inset: 0; z-index: 2147483000; overflow: clip;
+  background: radial-gradient(1200px 520px at 80% -10%, rgba(145,70,255,.22), transparent 70%), #0e0e10;
+  color: var(--text);
+  font-family: "Roobert", Inter, "Noto Sans", "Helvetica Neue", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+html.tvtw-watch .tvtw { display: none; }
+:where(.tvtw) button { font: inherit; color: inherit; border: none; background: none; padding: 0; margin: 0; text-align: left; outline: none !important; }
+.tvtw img { display: block; }
+.tvtw img.is-empty { background: #2a2a2e; }
+
+/* ---------- Leiste oben ---------- */
+.tvtw-header { position: absolute; left: 0; right: 0; top: 0; height: 96px; display: grid; grid-template-columns: 260px 1fr 260px;
+  align-items: center; padding: 0 64px; z-index: 2; }
+.tvtw-logo__mark { width: 40px; height: 40px; color: var(--purple); }
+.tvtw-pills { justify-self: center; display: flex; gap: 8px; padding: 6px; border-radius: 999px; background: rgba(255,255,255,.07); }
+.tvtw-pill { display: flex !important; align-items: center; gap: 10px; padding: 10px 22px !important; border-radius: 999px;
+  font-size: 18px; font-weight: 600; color: var(--muted) !important; white-space: nowrap; }
+.tvtw-pill__icon { width: 20px; height: 20px; }
+.tvtw-pill.is-selected { color: #fff !important; background: rgba(255,255,255,.14) !important; }
+.tvtw-pill.tv-focus { color: #fff !important; background: var(--purple) !important; }
+.tvtw-profile { justify-self: end; display: flex; align-items: center; gap: 12px; font-size: 17px; font-weight: 600; }
+.tvtw-profile__img { width: 40px; height: 40px; border-radius: 50%; }
+.tvtw-login { display: flex !important; align-items: center; gap: 8px; padding: 10px 20px !important; border-radius: 999px;
+  font-size: 17px; font-weight: 600; background: rgba(255,255,255,.1) !important; }
+.tvtw-login__icon { width: 20px; height: 20px; }
+.tvtw-login.tv-focus { background: var(--purple) !important; }
+
+/* ---------- Seite ---------- */
+.tvtw-page { position: absolute; left: 0; right: 0; top: 96px; bottom: 0; overflow: clip; }
+.tvtw-scroll { padding: 18px 64px 80px; will-change: transform; transition: transform .18s ease-out; }
+.tvtw-loading { position: absolute; left: 0; right: 0; top: 160px; display: grid; place-items: center; }
+.tvtw-empty, .tvtw-error { padding: 60px 0; text-align: center; font-size: 20px; color: var(--muted); }
+.tvtw-error { color: #f28b82; }
+.tvtw-page__title { font-size: 36px; font-weight: 700; margin: 6px 0 22px; }
+.tvtw-spinner { width: 56px; height: 56px; border-radius: 50%; border: 5px solid rgba(255,255,255,.15); border-top-color: var(--purple);
+  animation: tvtw-spin .9s linear infinite; }
+@keyframes tvtw-spin { to { transform: rotate(360deg); } }
+
+/* großes Bild oben auf der Startseite (wechselt mit dem gewählten Stream) */
+.tvtw-hero { display: flex; align-items: center; gap: 48px; height: 300px; margin-bottom: 26px; }
+.tvtw-hero__text { flex: 1 1 auto; min-width: 0; }
+.tvtw-hero__who { display: flex; align-items: center; gap: 14px; }
+.tvtw-hero__av { width: 52px; height: 52px; border-radius: 50%; }
+.tvtw-hero__name { font-size: 26px; font-weight: 700; }
+.tvtw-hero__title { margin-top: 18px; font-size: 30px; font-weight: 600; line-height: 1.25; display: -webkit-box; -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.tvtw-hero__meta { margin-top: 14px; font-size: 19px; color: var(--muted); }
+.tvtw-hero__pic { flex: 0 0 534px; width: 534px; height: 300px; border-radius: 12px; object-fit: cover; background: #222;
+  box-shadow: 0 20px 50px rgba(0,0,0,.5); }
+
+/* Reihen */
+.tvtw-shelf { margin-bottom: 30px; }
+.tvtw-shelf__title { font-size: 24px; font-weight: 700; margin: 0 0 12px; }
+.tvtw-clip { overflow: clip; overflow-clip-margin: 20px; margin: 0 -64px; padding: 0 64px; }
+.tvtw-row { display: flex; gap: 22px; padding: 8px 0 10px; transition: transform .18s ease-out; }
+.tvtw-grid { display: flex; flex-wrap: wrap; gap: 28px 22px; padding-top: 8px; }
+
+/* Karten */
+.tvtw-card { flex: 0 0 auto; display: block !important; border-radius: 12px; }
+.tvtw-card--stream, .tvtw-card--video { width: 335px; }
+.tvtw-card__thumb { position: relative; width: 335px; height: 188px; border-radius: 10px; overflow: hidden; background: #222; }
+.tvtw-card__img { width: 100%; height: 100%; object-fit: cover; }
+.tvtw-card.tv-focus .tvtw-card__thumb, .tvtw-card.tv-focus .tvtw-card__box, .tvtw-card.tv-focus .tvtw-card__avatar {
+  box-shadow: 0 0 0 4px var(--purple-l), 0 16px 36px rgba(0,0,0,.6); }
+.tvtw-card__meta { display: flex; gap: 12px; margin-top: 12px; }
+.tvtw-card__av { flex: 0 0 40px; width: 40px; height: 40px; border-radius: 50%; }
+.tvtw-card__text { min-width: 0; flex: 1 1 auto; }
+.tvtw-card__title { font-size: 17px; font-weight: 600; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tvtw-card__sub { font-size: 15px; line-height: 1.35; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tvtw-card.tv-focus .tvtw-card__title { color: var(--purple-l); }
+.tvtw-card--game { width: 156px; }
+.tvtw-card--game .tvtw-card__box { width: 156px; height: 208px; border-radius: 8px; object-fit: cover; background: #222; margin-bottom: 10px; }
+.tvtw-grid--games { gap: 30px 22px; }
+.tvtw-card--channel { width: 180px; text-align: center; }
+.tvtw-card--channel .tvtw-card__title, .tvtw-card--channel .tvtw-card__sub { text-align: center; }
+.tvtw-card__avwrap { position: relative; width: 150px; height: 150px; margin: 4px auto 12px; }
+.tvtw-card__avatar { width: 150px; height: 150px; border-radius: 50%; object-fit: cover; }
+.tvtw-card__avwrap .tvtw-badge--live { left: 50%; top: auto; bottom: -6px; transform: translateX(-50%); }
+
+.tvtw-badge { position: absolute; padding: 2px 7px; border-radius: 5px; font-size: 13px; font-weight: 700; line-height: 1.35; }
+.tvtw-badge--live { left: 10px; top: 10px; background: var(--live); color: #fff; letter-spacing: .03em; }
+.tvtw-badge--count { left: 10px; bottom: 10px; background: rgba(0,0,0,.72); color: #fff; font-weight: 600; }
+.tvtw-badge--when { right: 10px; bottom: 10px; background: rgba(0,0,0,.72); color: #fff; font-weight: 600; }
+.tvtw-hero .tvtw-badge, .tvtw-hero__who .tvtw-badge { position: static; font-size: 15px; }
+
+/* Knöpfe */
+.tvtw-actions { display: flex; gap: 14px; margin-top: 20px; }
+.tvtw-btn { display: inline-flex !important; align-items: center; gap: 10px; padding: 12px 26px !important; border-radius: 8px;
+  font-size: 18px; font-weight: 600; background: rgba(255,255,255,.12) !important; }
+.tvtw-btn--primary { background: var(--purple) !important; }
+.tvtw-btn__icon { width: 22px; height: 22px; }
+.tvtw-btn.tv-focus { background: #fff !important; color: #0e0e10 !important; }
+
+/* Kategorie */
+.tvtw-gamehead { display: flex; gap: 30px; align-items: flex-end; margin: 6px 0 26px; }
+.tvtw-gamehead__box { width: 138px; height: 184px; border-radius: 8px; }
+.tvtw-gamehead .tvtw-page__title { margin: 0 0 6px; }
+.tvtw-gamehead__sub { font-size: 18px; color: var(--muted); margin-bottom: 18px; }
+
+/* Kanal */
+.tvtw-channel { position: relative; margin: 0 -64px 30px; padding: 120px 64px 0; }
+.tvtw-channel__banner { position: absolute; left: 0; right: 0; top: -96px; height: 380px; background-size: cover; background-position: center;
+  opacity: .5; -webkit-mask-image: linear-gradient(#000 30%, transparent); }
+.tvtw-channel__row { position: relative; display: flex; gap: 32px; align-items: flex-start; }
+.tvtw-channel__av { width: 140px; height: 140px; border-radius: 50%; border: 4px solid #0e0e10; }
+.tvtw-channel__text { min-width: 0; flex: 1 1 auto; max-width: 980px; }
+.tvtw-channel__name { font-size: 40px; font-weight: 700; margin: 12px 0 6px; }
+.tvtw-channel__sub { font-size: 18px; color: var(--muted); }
+.tvtw-channel__live, .tvtw-channel__desc { margin-top: 14px; font-size: 20px; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.tvtw-channel__desc { color: var(--muted); font-size: 18px; }
+
+/* Suche */
+.tvtw-search { display: flex; align-items: center; gap: 14px; max-width: 760px; margin: 6px auto 30px; padding: 0 22px;
+  height: 60px; border-radius: 12px; background: rgba(255,255,255,.08); }
+.tvtw-search__icon { width: 24px; height: 24px; color: var(--muted); }
+.tvtw-search__input { flex: 1; height: 100%; border: none; background: none; outline: none; color: var(--text); font: inherit; font-size: 20px; }
+.tvtw-search:has(.tv-focus) { box-shadow: 0 0 0 3px var(--purple-l); }
+
+/* ---------- Ansehen: nur Twitchs Video zeigen, bildschirmfüllend ---------- */
+html.tvtw-watch body * { visibility: hidden !important; }
+html.tvtw-watch .persistent-player, html.tvtw-watch .persistent-player video { visibility: visible !important; }
+html.tvtw-watch .persistent-player {
+  position: fixed !important; inset: 0 !important; width: 100vw !important; height: 100vh !important; max-height: none !important;
+  transform: none !important; transition: none !important; z-index: 2147482000 !important; background: #000 !important; }
+html.tvtw-watch .persistent-player .tw-aspect, html.tvtw-watch .persistent-player .video-player,
+html.tvtw-watch .persistent-player .video-player__container, html.tvtw-watch .persistent-player .video-ref {
+  position: absolute !important; inset: 0 !important; width: 100% !important; height: 100% !important; max-height: none !important; padding: 0 !important; }
+html.tvtw-watch .persistent-player video { width: 100% !important; height: 100% !important; top: 0 !important; left: 0 !important; object-fit: contain; }
+html.tvtw-watch body { background: #000 !important; }
+
+.tvtw-wait { position: fixed; inset: 0; z-index: 2147483100; display: none; place-items: center; }
+.tvtw-wait.is-first { background: #000; }
+.tvtw-wait.is-on { display: grid; }
+.tvtw-wait .tvtw-spinner { border-top-color: #9146ff; }
+.tvtw-bar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 2147483200; padding: 120px 64px 40px; color: #efeff1;
+  font-family: "Roobert", Inter, "Noto Sans", Arial, sans-serif; -webkit-font-smoothing: antialiased;
+  background: linear-gradient(transparent, rgba(0,0,0,.85) 60%); opacity: 0; transform: translateY(20px);
+  transition: opacity .25s, transform .25s; pointer-events: none; }
+html:not(.tvtw-watch) .tvtw-bar { display: none; }
+.tvtw-bar.is-on { opacity: 1; transform: none; }
+.tvtw-bar__top { display: flex; align-items: center; gap: 22px; }
+.tvtw-bar__av { width: 72px; height: 72px; border-radius: 50%; border: 3px solid #9146ff; }
+.tvtw-bar__text { flex: 1 1 auto; min-width: 0; }
+.tvtw-bar__name { font-size: 28px; font-weight: 700; }
+.tvtw-bar__title { margin-top: 4px; font-size: 21px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tvtw-bar__meta { margin-top: 4px; font-size: 17px; color: #adadb8; }
+.tvtw-bar__state { width: 56px; height: 56px; }
+.tvtw-bar__prog { display: flex; align-items: center; gap: 18px; margin-top: 22px; font-size: 17px; font-variant-numeric: tabular-nums; }
+.tvtw-bar__prog[hidden] { display: none; }
+.tvtw-bar__track { flex: 1; height: 6px; border-radius: 99px; background: rgba(255,255,255,.25); overflow: hidden; }
+.tvtw-bar__fill { height: 100%; background: #9146ff; }
+.tvtw-bar__hint { margin-top: 18px; font-size: 16px; color: #adadb8; }
+/* Chat und Seitenleiste beim Ansehen gar nicht erst zeichnen */
+html.tvtw-watch .right-column, html.tvtw-watch .side-nav, html.tvtw-watch nav, html.tvtw-watch .channel-info-content { display: none !important; }
