@@ -23,7 +23,8 @@ PACKAGES="cloud-init rpi-cloud-init-mods cups cups-browsed cups-daemon cups-clie
   gcc g++ build-essential python3-dev gdb pocketsphinx-en-us
   firmware-atheros firmware-mediatek firmware-realtek firmware-libertas
   rpd-applications rpd-developer rpd-graphics rpd-utilities rpd-preferences rpd-wayland-extras
-  rpd-x-core rpd-x-extras openbox lxpanel-pi xcompmgr xinit gldriver-test"
+  rpd-x-core rpd-x-extras openbox lxpanel-pi xcompmgr xinit gldriver-test
+  mesa-vulkan-drivers chromium-l10n gcc-14 cpp-14 sq ghostscript sane-utils colord rpd-wallpaper rpd-wallpaper-trixie"
 # Was RaspiTV (und der Desktop) braucht, darf beim Aufräumen der Abhängigkeiten nie mitgehen
 KEEP="git python3 python3-pyqt5 python3-pyqt5.qtquick qml-module-qtquick2 qml-module-qtquick-window2
   qml-module-qtgraphicaleffects mpv chromium libwidevinecdm0 lxterminal libqrencode4 fonts-noto-color-emoji
@@ -32,10 +33,10 @@ KEEP="git python3 python3-pyqt5 python3-pyqt5.qtquick qml-module-qtquick2 qml-mo
   xwayland gnome-keyring libpam-gnome-keyring"
 # Dienste: Warten aufs Netz beim Start (RaspiTV wartet selbst höchstens 5 s), NFS, Pi-5-/X11-Tests, System-VNC,
 # tägliche Paket-Downloads und Handbuch-Index im Hintergrund
-UNITS="packagekit.service nfs-client.target rpc-statd.service NetworkManager-wait-online.service rpcbind.service rpcbind.socket nfs-blkmap.service rp1-test.service
+UNITS="upower.service packagekit.service nfs-client.target rpc-statd.service NetworkManager-wait-online.service rpcbind.service rpcbind.socket nfs-blkmap.service rp1-test.service
   glamor-test.service wayvnc-control.service apt-daily.timer apt-daily-upgrade.timer man-db.timer"
 # Benutzerdienste: Geräte-Erkennung für iPhone, Online-Konten, Digitalkameras, Android-Handys (MTP)
-USER_UNITS="gvfs-afc-volume-monitor.service gvfs-goa-volume-monitor.service gvfs-gphoto2-volume-monitor.service
+USER_UNITS="mpris-proxy.service gvfs-afc-volume-monitor.service gvfs-goa-volume-monitor.service gvfs-gphoto2-volume-monitor.service
   gvfs-mtp-volume-monitor.service"
 CONFIG=/boot/firmware/config.txt
 JOURNAL=/etc/systemd/journald.conf.d/raspitv.conf
@@ -70,7 +71,9 @@ fi
 # dazu: Kernel und Header für den Pi 5, alle Kernel-Header, der X11-Server (der Pi läuft unter Wayland),
 # Panel-Erweiterungen des alten X11-Panels
 EXTRA="$(dpkg-query -Wf '${Package} ${Status}\n' 2>/dev/null | awk '/ installed$/{print $1}' |
-  grep -E '^linux-(image|headers)-.*-rpi-2712$|^linux-headers-|^xserver-xorg|^lpplug-')"
+  grep -E '^linux-(image|headers)-.*-rpi-2712$|^linux-headers-|^xserver-xorg|^lpplug-')
+$(dpkg-query -Wf '${Package} ${Status}\n' 2>/dev/null | awk '/ installed$/{print $1}' |
+  grep -E '^linux-image-[0-9].*-rpi-v8$' | grep -v "^linux-image-$(uname -r)$")"
 # Schutzliste: alles, was der Kern-Desktop, das Bootbild und die Pi-Grundeinstellungen brauchen
 CORE="$(apt-cache depends --installed rpd-wayland-core rpd-common rpd-plym-splash 2>/dev/null |
   awk '/Depends|Recommends/{print $2}' | grep -v '^<')"
