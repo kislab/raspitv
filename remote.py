@@ -18,8 +18,8 @@ import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 HOST, PORT = "127.0.0.1", 8765
-KEYS = {"up", "down", "left", "right", "ok", "back", "home", "menu", "volumeup", "volumedown", "mute"}
-LOCAL = {"menu", "volumeup", "volumedown", "mute"}  # erledigt RaspiTV selbst, nicht an die Seite im Player
+KEYS = {"up", "down", "left", "right", "ok", "back", "home", "menu", "volumeup", "volumedown", "mute", "power", "poweroff"}
+LOCAL = {"menu", "volumeup", "volumedown", "mute", "power", "poweroff"}  # erledigt RaspiTV selbst, nicht an die Seite im Player
 
 
 def press(key):
@@ -126,7 +126,7 @@ def start(on_key, get_status, on_video=None, on_phone_qr=None):
     def press_key(key):
         if key != "playpause":
             on_key(key)
-        if key != "menu":  # "menu" gilt nur RaspiTV
+        if key not in LOCAL:  # Menü, Ein/Aus usw. gelten nur RaspiTV
             publish(key)
     press = press_key
     notify = publish

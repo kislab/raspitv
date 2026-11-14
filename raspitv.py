@@ -34,6 +34,7 @@ except ImportError:
              "  sudo apt-get install -y python3-pyqt5.qtquick qml-module-qtquick2 "
              "qml-module-qtquick-window2 qml-module-qtgraphicaleffects")
 
+import cec
 import network
 import phone
 import remote
@@ -127,6 +128,8 @@ class Home(AccountsUI, JellyfinUI, SetupUI, QObject):
         self.rate_lock = threading.Lock()
         self.vol = {"value": 0, "muted": False, "seq": 0}  # Lautstärke-Anzeige (seq zählt Tastendrücke)
         self.last_input = time.monotonic()  # letzter Tastendruck (Bildschirmschoner, Bildschirm aus)
+        self.cec = None                # HDMI-CEC (Fernseher ein/aus), siehe main
+        self.tv_off_at = 0.0           # wann der Fernseher sich per CEC abgemeldet hat
         self.saver = None              # None | "clock" (Bildschirmschoner) | "off" (Bildschirm aus)
         self.sleep_min = 0             # Sleep-Timer: gewählte Minuten (0 = aus)
         self.sleep_at = None           # … und wann er abläuft (monotonic)
@@ -279,6 +282,18 @@ class Home(AccountsUI, JellyfinUI, SetupUI, QObject):
     def handle(self, key):
         if key in ("volumeup", "volumedown", "mute"):  # z. B. über POST /key (CEC, Handy)
             threading.Thread(target=self.remote_extra, args=(key,), daemon=True).start()
+            return
+        if key == "power":  # Ein/Aus kurz: schlafen bzw. aufwachen
+            if time.monotonic() - self.tv_off_at < 4:
+                return  # Fernbedienung schaltete den Fernseher per Infrarot selbst aus, CEC war schneller
+            if self.saver == "off":
+                self.activity()
+            else:
+                self.go_to_sleep()
+            return
+        if key == "poweroff":  # Ein/Aus lang: Ausschalten anbieten
+            self.activity()
+            self.system("Ausschalten", "poweroff")
             return
         if self.activity():  # Taste weckt nur den Bildschirm auf
             self.push()
@@ -625,8 +640,13 @@ class Home(AccountsUI, JellyfinUI, SetupUI, QObject):
             self.show_toast("Sleep-Timer um 15 Minuten verlängert")
         if not self.saver:
             return False
-        if self.saver == "off":
-            threading.Thread(target=cfg.screen_power, args=(True,), daemon=True).start()
+        if self.saver == "off":  # Bild wieder an, Fernseher ein und auf RaspiTV umschalten
+            def wake():
+                cfg.screen_power(True)
+                if self.cec:
+                    print(f"{time.strftime('%H:%M:%S')} RaspiTV wacht auf – CEC Fernseher an:",
+                          "ok" if self.cec.tv_on() else "ging nicht", flush=True)
+            threading.Thread(target=wake, daemon=True).start()
         self.saver = None
         return True
 
@@ -658,7 +678,13 @@ class Home(AccountsUI, JellyfinUI, SetupUI, QObject):
             self.show_toast("Sleep-Timer: Gleich geht RaspiTV schlafen – Taste drücken für 15 Minuten mehr", 60)
 
     def sleep_now(self):
-        """Sleep-Timer abgelaufen: Wiedergabe beenden, zur Startseite, Bildschirm aus."""
+        """Sleep-Timer abgelaufen: schlafen gehen."""
+        self.go_to_sleep()
+
+    def go_to_sleep(self, tv=True):
+        """Schlafen (Ein/Aus-Taste, Sleep-Timer, Fernseher ging aus): Wiedergabe beenden, zur Startseite,
+        Bild aus und – über HDMI-CEC – den Fernseher in Standby. Ausschalten kann sich ein Raspberry Pi
+        nicht ohne Neustart, darum ruht RaspiTV nur; jede Taste weckt es sofort wieder."""
         self.sleep_min, self.sleep_at, self.sleep_warned = 0, None, False
         self.hide_toast()
         if self.mpv.running():
@@ -667,6 +693,24 @@ class Home(AccountsUI, JellyfinUI, SetupUI, QObject):
             self.go_home()
         self.dialog = self.menu = None
         self.screen_off()
+        print(f"{time.strftime('%H:%M:%S')} RaspiTV schläft", flush=True)
+        if tv and self.cec:
+            threading.Thread(target=lambda: print("CEC: Fernseher aus", "ok" if self.cec.tv_off() else "ging nicht",
+                                                  flush=True), daemon=True).start()
+
+    def tv_went_off(self):
+        """Fernseher mit seiner eigenen Fernbedienung ausgeschaltet (CEC): RaspiTV schläft mit."""
+        if self.saver != "off":
+            print(f"{time.strftime('%H:%M:%S')} CEC: Fernseher aus – RaspiTV schläft", flush=True)
+            self.tv_off_at = time.monotonic()
+            self.go_to_sleep(tv=False)
+
+    def tv_selected(self):
+        """Am Fernseher wurde der HDMI-Eingang von RaspiTV gewählt (CEC): aufwachen."""
+        if self.saver == "off":
+            print(f"{time.strftime('%H:%M:%S')} CEC: Eingang gewählt – RaspiTV wacht auf", flush=True)
+            self.activity()
+            self.push()
 
     def show_saver(self):
         self.last_input = time.monotonic()
@@ -1452,6 +1496,9 @@ def main():
     threading.Thread(target=start_mode, daemon=True).start()
     home.remote_input = remote_input.RemoteInput(remote.press, home.remote_extra, lambda: home.remote_macs,
                                                    lambda: home.bgDone.emit(home.remote_connected))
+    # Fernseher über HDMI-CEC schalten und hören, wenn er aus- bzw. auf RaspiTV umgeschaltet wird
+    home.cec = cec.Cec(lambda: home.bgDone.emit(home.tv_went_off), lambda: home.bgDone.emit(home.tv_selected),
+                       lambda: home.saver != "off")
     # Kopplungsanfragen beantwortet RaspiTV selbst – kein Desktop-Fenster über der Oberfläche
     agent = network.BtAgent(home.bt_allow)
     # Schlafende Fernbedienung beim nächsten Tastendruck sofort wieder verbinden

@@ -41,6 +41,12 @@ Mediacenter für den Raspberry Pi 4 im Stil von Google TV – bedienbar mit der 
   Wiederverbinden zählt als Tastendruck und weckt den Bildschirm – und beantwortet Kopplungsanfragen selbst (kein Desktop-Fenster). Symbol oben
   rechts: hell = verbunden, durchgestrichen = schläft/getrennt; daneben der Akkustand, falls die Fernbedienung ihn
   meldet (BlueZ „Battery Percentage“), ab 15 % rot mit einmaligem Hinweis „Akku fast leer“. Nötig: Bluetooth-„Privacy“ (macht der Installer).
+- **Ein/Aus-Taste & HDMI-CEC** (`cec.py`, braucht `cec-ctl` aus v4l-utils): Ein/Aus kurz → RaspiTV schläft
+  (Wiedergabe aus, Bild aus) und schaltet den Fernseher über HDMI-CEC in Standby; noch einmal kurz (oder jede andere
+  Taste) → Fernseher an und auf den RaspiTV-Eingang. Ein/Aus 1 s halten → „Ausschalten?“. Ein Raspberry Pi kann sich
+  nicht wirklich schlafen legen, RaspiTV ruht also nur. Auch der Sleep-Timer schaltet den Fernseher aus. Umgekehrt:
+  Fernseher mit seiner Fernbedienung aus → RaspiTV schläft mit; RaspiTV-Eingang am Fernseher gewählt → wacht auf.
+  Ohne CEC (Monitor) bleibt es beim Bild aus. Tasten-Codes prüfen: `RASPITV_KEYLOG=1 python3 raspitv.py`.
 - **Kacheln anordnen**: OK lange gedrückt halten → Menü mit Öffnen, Verschieben, Deinstallieren.
 - **Lautstärke**: Lautstärke-Tasten der Fernbedienung stellen den Standard-Audioausgang (PipeWire); unter 20 % in
   2er-, sonst in 5er-Schritten, „lauter“ hebt Stumm auf. Anzeige als senkrechte Leiste links – gleich in RaspiTV
@@ -73,7 +79,7 @@ Mediacenter für den Raspberry Pi 4 im Stil von Google TV – bedienbar mit der 
   zusammen mit der Startbild-Regel verwaltet) blenden ihn aus, sobald Player oder Jellyfin-Wiedergabe aufgehen.
   Der QR-Code kommt aus `libqrencode` (über ctypes, Paket `libqrencode4`).
 - **Fernbedienung**: HTTP-Schnittstelle auf `127.0.0.1:8765` (`POST /key {"key": "up"}`, `"menu"` = langes OK,
-  `"volumeup"`/`"volumedown"`/`"mute"`, `GET /status`).
+  `"volumeup"`/`"volumedown"`/`"mute"`, `"power"` = schlafen/aufwachen, `"poweroff"`, `GET /status`).
 
 ## Installation
 

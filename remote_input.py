@@ -33,7 +33,9 @@ KEYS = {
     139: "menu", 127: "menu",                          # MENU, COMPOSE
     164: "playpause", 207: "playpause", 119: "playpause",  # PLAYPAUSE, PLAY, PAUSE
     115: "volumeup", 114: "volumedown", 113: "mute",
+    116: "power", 142: "power",                        # POWER, SLEEP
 }
+POWER_LONG = 1.0  # Ein/Aus länger halten: Ausschalten anbieten
 
 
 def _has_key(bits_hex, code):
@@ -77,6 +79,8 @@ class RemoteInput:
         self.scanned = False
         self.open = {}              # Pfad -> Dateideskriptor
         self.ok_down = None
+        self.power_down = None
+        self.unknown = set()
         threading.Thread(target=self.run, daemon=True).start()
 
     def rescan(self):
@@ -119,7 +123,12 @@ class RemoteInput:
                     continue
                 for i in range(0, len(data) - EVENT.size + 1, EVENT.size):
                     _, _, typ, code, value = EVENT.unpack_from(data, i)
+                    if os.environ.get("RASPITV_KEYLOG") and typ:
+                        print(f"{time.strftime('%H:%M:%S')} ev type={typ} code={code} value={value}", flush=True)
                     if typ == EV_KEY:
+                        if code not in KEYS and code not in self.unknown:
+                            self.unknown.add(code)  # hilft beim Belegen neuer Tasten
+                            print(f"{time.strftime('%H:%M:%S')} Fernbedienung: Taste {code} ohne Belegung", flush=True)
                         self.key(KEYS.get(code), value)
             self.check_long_press()
 
@@ -133,6 +142,13 @@ class RemoteInput:
             elif value == 0 and self.ok_down is not None:
                 self.ok_down = None
                 self.press("ok")
+            return
+        if key == "power":  # kurz = schlafen / aufwachen, lang = Ausschalten anbieten
+            if value == 1:
+                self.power_down = time.monotonic()
+            elif value == 0 and self.power_down is not None:
+                self.power_down = None
+                self.press("power")
             return
         if value == 0:
             return
@@ -148,3 +164,6 @@ class RemoteInput:
         if self.ok_down is not None and time.monotonic() - self.ok_down >= LONG_PRESS:
             self.ok_down = None
             self.press("menu")
+        if self.power_down is not None and time.monotonic() - self.power_down >= POWER_LONG:
+            self.power_down = None
+            self.press("poweroff")

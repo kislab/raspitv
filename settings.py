@@ -358,7 +358,7 @@ def screen_power(on):
                                                 timeout=5).stdout or "[]")
             ok = False
             for out in outputs:
-                if not out.get("enabled"):
+                if not out.get("enabled") or out.get("name", "").startswith("NOOP"):  # nie den Ersatz-Ausgang
                     continue
                 mode = next((m for m in out.get("modes", []) if m.get("current")), None)
                 _screens[out["name"]] = f"{mode['width']}x{mode['height']}@{mode['refresh']:f}" if mode else ""

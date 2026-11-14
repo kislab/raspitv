@@ -13,7 +13,8 @@ SUDO="sudo"
 
 # alles, was RaspiTV braucht (install.sh installiert vorab schon das, was die Oberfläche selbst braucht)
 PACKAGES="git python3 python3-pyqt5 python3-pyqt5.qtquick qml-module-qtquick2 qml-module-qtquick-window2
-  qml-module-qtgraphicaleffects mpv chromium libwidevinecdm0 lxterminal libqrencode4 fonts-noto-color-emoji"
+  qml-module-qtgraphicaleffects mpv chromium libwidevinecdm0 lxterminal libqrencode4 fonts-noto-color-emoji
+  v4l-utils"
 
 step_packages() {
   local missing=""
