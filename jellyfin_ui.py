@@ -209,8 +209,6 @@ class JellyfinUI:
         self.busy(f"{title} wird gestartet …")
 
         def work():
-            done_event = []
-
             def ended(position):
                 self.bgDone.emit(lambda: self.jf_playback_ended())
             self.mpv.play(client, item_id, title, start, ended)

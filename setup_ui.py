@@ -224,8 +224,6 @@ class SetupUI:
         """Im Schritt „Fernbedienung“ ständig nach Geräten suchen (je 8 s), bis es weitergeht."""
         if not self.setup or self.setup["step"] != "remote" or self.bt["scanning"]:
             return
-        if not network.bt_enabled():
-            network.set_bluetooth(True)
         self.bt["scanning"] = True
 
         def done(found):
@@ -233,7 +231,11 @@ class SetupUI:
             # weitersuchen, bis eine Fernbedienung gekoppelt ist (danach darf sie sich in Ruhe verbinden)
             if not self.remote_name:
                 QTimer.singleShot(500 if self.dialog is None else 3000, self.setup_scan_remotes)
-        self.run_bg(lambda: network.bt_scan(8, le_only=True), done)
+        def scan():
+            if not network.bt_enabled():
+                network.set_bluetooth(True)  # im Hintergrund – kann einige Sekunden dauern
+            return network.bt_scan(8, le_only=True)
+        self.run_bg(scan, done)
 
     @staticmethod
     def setup_check_update():

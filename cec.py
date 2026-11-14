@@ -8,7 +8,9 @@ In die andere Richtung hört RaspiTV mit: Schaltet man den Fernseher mit seiner 
 schläft RaspiTV auch ein. Wählt man am Fernseher den HDMI-Eingang von RaspiTV, wacht es auf.
 Ohne CEC (z. B. an einem Monitor) passiert einfach nichts.
 """
+import ctypes
 import re
+import signal
 import subprocess
 import threading
 import time
@@ -16,6 +18,14 @@ from pathlib import Path
 
 TV = 0  # logische Adresse des Fernsehers
 OPS = {0x36: "standby", 0x86: "stream", 0x80: "routing", 0x81: "routing", 0x8F: "power?"}
+
+
+def _die_with_parent():
+    """Im Kind-Prozess: endet RaspiTV, endet auch cec-ctl (sonst bliebe es bis zur nächsten CEC-Nachricht hängen)."""
+    try:
+        ctypes.CDLL("libc.so.6").prctl(1, signal.SIGTERM)  # PR_SET_PDEATHSIG
+    except OSError:
+        pass
 
 
 def _run(*args, timeout=8):
@@ -87,7 +97,8 @@ class Cec:
                 continue
             try:
                 proc = subprocess.Popen(["stdbuf", "-oL", "cec-ctl", "-d", self.dev, "-W", "-r"],
-                                        stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+                                        stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True,
+                                        preexec_fn=_die_with_parent)
                 for line in proc.stdout:
                     m = re.match(r"\s*Raw:\s*((?:0x[0-9a-f]{2}\s*)+)", line)
                     if m:
