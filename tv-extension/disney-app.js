@@ -1460,7 +1460,11 @@
     inPlayer: isPlayer,
     playerKey(key) {
       if (key === "back") {
-        hideBar();
+        // Leiste eingeblendet: Zurück blendet nur sie aus; erst der nächste Druck verlässt das Video
+        if (bar && bar.classList.contains("tv-pb-show")) {
+          hideBar();
+          return true;
+        }
         history.back();
         return true;
       }

@@ -49,6 +49,12 @@
 
     playerKey(key, fromKeyboard) {
       if (key === "back") {
+        // Leiste (oder „Überspringen“) eingeblendet: Zurück blendet nur sie aus; sonst Video verlassen
+        const bar = document.getElementById("tv-player-bar");
+        if (bar && bar.classList.contains("tv-pb-show")) {
+          bar.classList.remove("tv-pb-show");
+          return true;
+        }
         history.back();
         return true;
       }
