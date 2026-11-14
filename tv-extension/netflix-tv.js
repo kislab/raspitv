@@ -652,6 +652,7 @@
     return rail;
   }
 
+  let peekTimer = null;
   function renderHome() {
     const { rows, billboard } = S.home;
     const hasHero = !!billboard;
@@ -694,9 +695,15 @@
       dom.peekTitle.textContent = card.label;
       // Raster (Suche, Meine Liste): Zeilen ohne eigene Überschrift zeigen die der ersten Zeile
       dom.peekRow.textContent = row.title || (rows.slice(0, S.row).reverse().find((r) => r.title) || {}).title || "";
+      // Großes Hintergrundbild erst tauschen, wenn man kurz auf der Karte bleibt: beim schnellen Blättern
+      // kostete das Laden und Zeichnen des maskierten Bildes bei jedem Schritt spürbar Bilder (Ruckeln)
       if (dom.peekBg.dataset.src !== card.img) {
-        dom.peekBg.dataset.src = card.img;
-        dom.peekBg.src = card.img;
+        clearTimeout(peekTimer);
+        const next = card.img;
+        peekTimer = setTimeout(() => {
+          dom.peekBg.dataset.src = next;
+          dom.peekBg.src = next;
+        }, 260);
       }
     }
   }

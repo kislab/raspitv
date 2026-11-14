@@ -16,21 +16,30 @@
   const strip = (doc) => JSON.parse(JSON.stringify(doc, (k, v) => (k === "loc" ? undefined : v)));
   const opName = (doc) => doc?.definitions?.find((d) => d.kind === "OperationDefinition")?.name?.value || "";
   let dirty = false;
+  let savedAt = 0;
+  // Schon kopierte Abfragen (dieselben Objekte der Seite): nicht noch einmal kopieren. Früher wurde jede Abfrage,
+  // deren Werte sich von der gemerkten unterschieden (z. B. jede Reihe der Startseite), alle 1,5 s neu kopiert
+  // und gespeichert – das kostete beim Blättern regelmäßig Bilder (Ruckeln).
+  const copied = new WeakSet();
   function remember(doc, vars) {
     const name = opName(doc);
     if (!name || /^CLCS/.test(name)) return;
     const known = docs[name];
     // Startseite: die Grundwerte der eigentlichen Startseite merken (nicht die einer Kategorie)
     if (known && name === "GetBrowsePage" && vars?.categoryId != null) return;
-    if (known && known.vars && JSON.stringify(known.vars) === JSON.stringify(vars)) return;
+    if (known && copied.has(doc)) return; // bekannte Abfrage – die gemerkten Werte reichen zum erneuten Stellen
+    if (known && known.vars && JSON.stringify(known.vars) === JSON.stringify(vars)) { copied.add(doc); return; }
     docs[name] = { doc: strip(doc), vars: JSON.parse(JSON.stringify(vars || {})) };
+    copied.add(doc);
     dirty = true;
   }
-  function save() {
-    if (!dirty) return;
+  function save(force) {
+    if (!dirty || (!force && Date.now() - savedAt < 20000)) return; // höchstens alle 20 s schreiben
     dirty = false;
+    savedAt = Date.now();
     try { localStorage.setItem(STORE, JSON.stringify(docs)); } catch (e) { /* voll o. Ä. */ }
   }
+  window.addEventListener("pagehide", () => save(true));
 
   // Abfragen der Seite einsammeln (laufende Abfragen des Clients) und Änderungen (Mutationen) mitschneiden
   let hooked = null;

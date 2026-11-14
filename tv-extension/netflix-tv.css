@@ -82,7 +82,7 @@ html.nftv-on #nftv { display: block; }
   object-fit: cover;
   transition: opacity 0.4s;
 }
-.nf-peek-bg { width: 64%; height: 62%; opacity: 0; filter: saturate(1.1); }
+.nf-peek-bg { width: 64%; height: 62%; opacity: 0; }
 /* Bilder laufen nach links und unten weich in den schwarzen Hintergrund aus */
 .nf-hero-bg, .nf-peek-bg, .nf-d-bg {
   -webkit-mask-image: linear-gradient(to right, transparent 0%, #000 38%), linear-gradient(to top, transparent 0%, #000 35%);
@@ -167,17 +167,19 @@ html.nftv-on #nftv { display: block; }
   right: 0;
   top: 0;
   transition: transform 0.35s cubic-bezier(0.2, 0.7, 0.2, 1);
+  will-change: transform; /* eigene Ebene: Gleiten ohne Neuaufbau der Ebenen bei jedem Schritt */
 }
 .nf-row { height: calc(var(--u) * 32); transition: opacity 0.25s; }
 .nf-d-rows .nf-row { height: calc(var(--u) * 42); }
 .nf-row-gone { opacity: 0; }
-.nf-card { transition: transform 0.2s ease-out, box-shadow 0.2s, opacity 0.2s; }
+.nf-card { transition: transform 0.2s ease-out, opacity 0.2s; }
 .nf-card.nf-past { opacity: 0; } /* Karten links der gewählten liegen unter der Leiste */
 .nf-row-title { margin: 0 0 calc(var(--u) * 1.4); font-size: calc(var(--u) * 2.4); font-weight: 700; color: #e5e5e5; }
 .nf-track {
   display: flex;
   gap: calc(var(--u) * 1.6);
   transition: transform 0.3s cubic-bezier(0.2, 0.7, 0.2, 1);
+  will-change: transform;
 }
 .nf-card {
   position: relative;
@@ -188,14 +190,25 @@ html.nftv-on #nftv { display: block; }
   overflow: hidden;
   background: #222;
   transform-origin: left center;
-  transition: transform 0.2s ease-out, box-shadow 0.2s;
+  transition: transform 0.2s ease-out;
 }
 .nf-card-img { width: 100%; height: 100%; object-fit: cover; }
 .nf-card.nf-on {
   transform: scale(1.1);
   z-index: 2;
-  box-shadow: 0 0 0 calc(var(--u) * 0.35) #fff, 0 calc(var(--u) * 1.4) calc(var(--u) * 4) rgba(0, 0, 0, 0.8);
 }
+/* Fokus-Rahmen: nur ein- und ausblenden (Grafikeinheit) statt einen weichen Schatten neu zu zeichnen */
+.nf-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 calc(var(--u) * 0.35) #fff;
+  opacity: 0;
+  transition: opacity 0.15s;
+  pointer-events: none;
+}
+.nf-card.nf-on::after { opacity: 1; }
 .nf-card-progress {
   position: absolute;
   left: calc(var(--u) * 1.2); right: calc(var(--u) * 1.2); bottom: calc(var(--u) * 1);

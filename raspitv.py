@@ -1591,7 +1591,13 @@ def main():
     # gewählte Auflösung setzen (z. B. Full HD statt 4K mit 30 Hz, das der Fernseher von sich aus nimmt)
     def start_mode():
         cfg.apply_display_mode(home.settings["display_mode"])
-        home.base_mode = cfg.current_display_mode()  # Grund-Bildrate für die Bildraten-Anpassung
+        # Grund-Bildrate: die beste der aktuellen Auflösung (60 Hz) – nicht die, die gerade zufällig läuft
+        # (z. B. 50 Hz, wenn RaspiTV während eines Videos neu gestartet wurde; sonst blieb es dauerhaft dabei)
+        output, now = cfg.current_display_mode()
+        best = next((m for m in cfg.display_modes() if m["current"]), None)
+        if output and best and best["mode"] != now:
+            cfg.set_display_mode(output, best["mode"])
+        home.base_mode = cfg.current_display_mode()
     threading.Thread(target=start_mode, daemon=True).start()
     home.remote_input = remote_input.RemoteInput(remote.press, home.remote_extra, lambda: home.remote_macs,
                                                    lambda: home.bgDone.emit(home.remote_connected))
