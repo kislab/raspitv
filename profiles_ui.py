@@ -1,9 +1,16 @@
 """Konten in der Oberfläche: „Wer schaut?“, Kontowechsel, Konten anlegen/ändern, PIN und
 Bildschirmtastatur. Wird als Mixin von raspitv.Home benutzt; gezeichnet wird in qml/."""
-from PyQt5.QtCore import Qt
+import secrets
+
+from PyQt5.QtCore import QBuffer, QByteArray, QIODevice, Qt
+from PyQt5.QtGui import QImage
 
 import accounts
+import phone
 import settings as cfg
+
+AVATAR_COLS = 8
+AVATAR_EMOJIS = [""] + accounts.EMOJIS   # "" = Anfangsbuchstabe
 
 PIN_LEN = 4
 TEXT_KEYS = [list("ABCDEFGHIJ"), list("KLMNOPQRST"), list("UVWXYZÄÖÜß"), list("1234567890-"),
@@ -23,6 +30,7 @@ class AccountsUI:
         self.acc_data = accounts.load()
         last = accounts.find(self.acc_data, self.acc_data.get("last")) or self.acc_data["accounts"][0]
         self.account = last
+        self.avatar_pick = None  # Profilbild-Auswahl: {"account", "row", "col", "token", "qr", "url"}
         self.osk = None      # Bildschirmtastatur: {"title", "value", "mode", "row", "col", "done", "error"}
         self.prof = 0        # gewähltes Konto in „Wer schaut?“
         self.head_col = 1    # Kopfzeile: 0 = Konto, 1 = Einstellungen
@@ -112,7 +120,8 @@ class AccountsUI:
         self.open_osk("Name des neuen Kontos", "text", done)
 
     def open_profile_menu(self, account):
-        items = [("Umbenennen", lambda: self.with_pin(account, lambda: self.rename_account(account))),
+        items = [("Profilbild ändern", lambda: self.with_pin(account, lambda: self.open_avatar_pick(account))),
+                 ("Umbenennen", lambda: self.with_pin(account, lambda: self.rename_account(account))),
                  ("PIN ändern" if account.get("pin") else "PIN festlegen",
                   lambda: self.with_pin(account, lambda: self.new_pin(account)))]
         if account.get("pin"):
@@ -121,6 +130,92 @@ class AccountsUI:
             items.append(("Konto löschen", lambda: self.with_pin(account, lambda: self.ask_delete(account))))
         self.menu = {"items": items, "index": 0, "title": account["name"], "anchor": "profile",
                      "at": self.acc_data["accounts"].index(account)}
+
+    # ---------- Profilbild ----------
+    # Raster: Zeile 0 Hintergrundfarben, Zeilen 1–3 kleine Bilder (zuerst der Anfangsbuchstabe), Zeile 4 „Fertig“.
+    # Daneben ein QR-Code: Foto vom Handy hochladen (phone.py /avatar, Einmal-Schlüssel nur solange offen).
+
+    def open_avatar_pick(self, account, on_done=None):
+        current = account.get("avatar", "")
+        emoji = current[6:] if current.startswith("emoji:") else ""
+        row, col = (1 + AVATAR_EMOJIS.index(emoji) // AVATAR_COLS, AVATAR_EMOJIS.index(emoji) % AVATAR_COLS) \
+            if emoji in AVATAR_EMOJIS and current != "image" else (0, max(0, accounts.COLORS.index(account["color"]))
+                                                                        if account["color"] in accounts.COLORS else 0)
+        token = secrets.token_urlsafe(12)
+        qr, url = [], ""
+        self.avatar_server_started = False
+        if self.phone.running() or self.phone.start():
+            self.avatar_server_started = not self.settings["phone_remote"]
+            self.phone.upload = {"token": token, "done": lambda data: self.bgDone.emit(lambda: self.avatar_uploaded(data))}
+            url = f"http://{cfg.ip_address()}:{phone.PORT}/avatar#t={token}"
+            matrix = phone.qr_matrix(url)
+            qr = ["".join("1" if c else "0" for c in r) for r in matrix] if matrix else []
+        self.avatar_pick = {"account": account, "row": row, "col": col, "qr": qr,
+                            "url": f"{cfg.ip_address()}:{phone.PORT}/avatar" if url else "", "on_done": on_done}
+        self.menu = None
+
+    def avatar_state(self):
+        a = self.avatar_pick
+        if not a:
+            return None
+        return {"account": self.account_info(a["account"]), "row": a["row"], "col": a["col"], "qr": a["qr"],
+                "url": a["url"], "colors": accounts.COLORS, "emojis": AVATAR_EMOJIS, "cols": AVATAR_COLS}
+
+    def avatar_rows(self):
+        return [len(accounts.COLORS)] + [AVATAR_COLS] * (-(-len(AVATAR_EMOJIS) // AVATAR_COLS)) + [1]
+
+    def avatar_key(self, key):
+        a = self.avatar_pick
+        rows = self.avatar_rows()
+        if key in ("up", "down"):
+            r = min(max(a["row"] + (1 if key == "down" else -1), 0), len(rows) - 1)
+            last = len(AVATAR_EMOJIS) - 1 - (r - 1) * AVATAR_COLS if 1 <= r < len(rows) - 1 else rows[r] - 1
+            a["row"], a["col"] = r, min(a["col"], last, rows[r] - 1)
+        elif key in ("left", "right"):
+            last = rows[a["row"]] - 1
+            if 1 <= a["row"] < len(rows) - 1:
+                last = min(last, len(AVATAR_EMOJIS) - 1 - (a["row"] - 1) * AVATAR_COLS)
+            a["col"] = min(max(a["col"] + (1 if key == "right" else -1), 0), last)
+        elif key == "ok":
+            account = a["account"]
+            if a["row"] == 0:
+                accounts.set_avatar(self.acc_data, account, color=accounts.COLORS[a["col"]])
+            elif a["row"] < len(rows) - 1:
+                accounts.set_avatar(self.acc_data, account, emoji=AVATAR_EMOJIS[(a["row"] - 1) * AVATAR_COLS + a["col"]])
+            else:
+                self.close_avatar_pick()
+                return
+            if a["on_done"]:
+                a["on_done"]()
+        elif key in ("back", "home"):
+            self.close_avatar_pick()
+
+    def avatar_uploaded(self, data):
+        """Foto vom Handy: quadratisch zuschneiden, auf 320 px verkleinern, als JPEG speichern."""
+        a = self.avatar_pick
+        if not a:
+            return
+        image = QImage.fromData(data)
+        if image.isNull():
+            return self.show_toast("Das Bild ließ sich nicht öffnen")
+        side = min(image.width(), image.height())
+        image = image.copy((image.width() - side) // 2, (image.height() - side) // 2, side, side)
+        image = image.scaled(320, 320, Qt.IgnoreAspectRatio, Qt.SmoothTransformation)
+        buf = QByteArray()
+        dev = QBuffer(buf)
+        dev.open(QIODevice.WriteOnly)
+        image.save(dev, "JPEG", 88)
+        accounts.set_avatar(self.acc_data, a["account"], image=bytes(buf))
+        if a["on_done"]:
+            a["on_done"]()
+        self.show_toast("Foto als Profilbild übernommen")
+        self.close_avatar_pick()
+
+    def close_avatar_pick(self):
+        self.avatar_pick = None
+        self.phone.upload = None
+        if getattr(self, "avatar_server_started", False) and not self.settings["phone_remote"]:
+            self.phone.stop()  # war nur fürs Hochladen an
 
     def rename_account(self, account):
         def done(name):

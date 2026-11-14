@@ -27,7 +27,7 @@ Item {
     readonly property string font: "Nunito Sans"
 
     // Fokus sichtbar zeigen, solange nichts darüber liegt
-    readonly property bool free: !s.dialog && !s.osk && !s.menu
+    readonly property bool free: !s.dialog && !s.osk && !s.menu && !s.avatarPick
 
     function ms(t) { return anim ? t : 0 }
     function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)) }
@@ -57,6 +57,7 @@ Item {
                     : s.menu.anchor === "center" ? Qt.rect(width / 2, height / 2 + 7 * app.u, 0, 0)  // Ein/Aus-Menü
                     : home.tileRect(s.menu.at)
     }
+    AvatarPicker { anchors.fill: parent }
     Dialog { anchors.fill: parent; visible: !!s.dialog }
     Osk { anchors.fill: parent; visible: !!s.osk }
     PhonePair { anchors.fill: parent }

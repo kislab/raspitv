@@ -59,6 +59,8 @@ class SetupUI:
             account = self.acc_data["accounts"][0]
             return [{"kind": "action", "label": account["name"], "hint": "Name ändern",
                      "run": lambda: self.setup_rename(account)},
+                    {"kind": "action", "label": "Profilbild", "hint": "Ändern",
+                     "run": lambda: self.open_avatar_pick(account, lambda: self.setup.update(named=True))},
                     dict(nxt, primary=st.get("named", False))]  # blau, sobald der Name eingetragen ist
         if step == "wifi":
             # ohne den WLAN-Schalter (aus Versehen ausschalten wäre hier nur hinderlich, außer es ist aus)
@@ -102,8 +104,8 @@ class SetupUI:
                    "Sie erscheint dann unter „Gefunden“ – mit OK koppeln."),
         "welcome": ("Willkommen bei RaspiTV", "In ein paar Schritten ist dein Raspberry Pi ein Fernseher-Zuspieler: "
                     "Netflix, Disney+, YouTube, Mediatheken und mehr – bedienbar mit der Fernbedienung."),
-        "account": ("Wie heißt du?", "Dein Name erscheint oben im Homescreen. Weitere Personen mit eigenen Logins "
-                    "kannst du später unter „Konto“ anlegen."),
+        "account": ("Wie heißt du?", "Name und Profilbild erscheinen oben im Homescreen. Weitere Personen mit eigenen "
+                    "Logins kannst du später unter „Konto“ anlegen."),
         "wifi": ("WLAN aussuchen", "Wähle dein WLAN. Mit Kabel oder bestehender Verbindung kannst du einfach weiter."),
         "update": ("Auf Updates prüfen", "RaspiTV holt sich die neueste Version."),
         "install": ("RaspiTV wird eingerichtet", "Das dauert ein paar Minuten. Danach geht es direkt zum Homescreen."),

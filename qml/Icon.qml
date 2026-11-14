@@ -6,6 +6,8 @@ Canvas {
     property string name
     property color color: app.text
     property color hole: app.dark      // Farbe für Aussparungen (Zahnrad-Mitte, Schloss)
+    property int level: 4              // WLAN: Signalstärke 1–4 (schwache Bögen blass)
+    onLevelChanged: requestPaint()
     width: app.u * 1.5; height: width
     renderStrategy: Canvas.Immediate
     onColorChanged: requestPaint()
@@ -89,8 +91,10 @@ Canvas {
         } else if (name === "wifi") {
             var cy = y + 0.55 * r
             for (var w = 1; w <= 3; w++) {
+                g.globalAlpha = icon.level > w ? 1 : 0.28
                 g.beginPath(); g.arc(x, cy, w * 0.42 * r, -Math.PI * 0.78, -Math.PI * 0.22); g.stroke()
             }
+            g.globalAlpha = 1
             g.beginPath(); g.arc(x, cy, 0.09 * s, 0, 2 * Math.PI); g.fill()
         } else if (name === "remote") {
             // schmale Fernbedienung: Gehäuse, Steuerkreuz-Ring, zwei Tasten

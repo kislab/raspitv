@@ -34,6 +34,7 @@ except ImportError:
              "  sudo apt-get install -y python3-pyqt5.qtquick qml-module-qtquick2 "
              "qml-module-qtquick-window2 qml-module-qtgraphicaleffects")
 
+import accounts
 import cec
 import network
 import phone
@@ -217,6 +218,7 @@ class Home(AccountsUI, JellyfinUI, SetupUI, QObject):
             "menu": menu, "dialog": dialog, "jf": self.jf_state(), "vol": self.vol,
             "remoteWait": self.remote_wait(),
             "saver": self.saver, "sleep": self.sleep_left(), "toast": self.toast, "phone": self.phone_pair,
+            "avatarPick": self.avatar_state(),
             "covered": bool(self.running and time.monotonic() - self.started > COVERED_AFTER),
             "settings": {"cats": [{k: c[k] for k in ("label", "icon", "desc")} for c in self.cats],
                          "cat": self.cat, "pane": self.pane, "item": self.item, "sub": self.sub_info(),
@@ -233,13 +235,19 @@ class Home(AccountsUI, JellyfinUI, SetupUI, QObject):
 
     @staticmethod
     def account_info(account):
+        avatar = account.get("avatar", "")
+        image = ""
+        if avatar == "image" and accounts.avatar_file(account).exists():
+            image = accounts.avatar_file(account).as_uri() + f"?v={account.get('avatar_v', 0)}"
         return {"id": account["id"], "name": account["name"], "color": account["color"],
-                "initial": account["name"][:1].upper(), "pin": bool(account.get("pin"))}
+                "initial": account["name"][:1].upper(), "pin": bool(account.get("pin")),
+                "emoji": avatar[6:] if avatar.startswith("emoji:") else "", "image": image}
 
     @staticmethod
     def item_info(item):
         kind = item["kind"]
-        info = {"kind": kind, "label": item["label"], "hint": item.get("hint"), "primary": bool(item.get("primary"))}
+        info = {"kind": kind, "label": item["label"], "hint": item.get("hint"), "primary": bool(item.get("primary")),
+                "wifi": item.get("wifi")}
         if kind == "toggle":
             info["on"] = bool(item["value"]())
         elif kind in ("choice", "range"):
@@ -331,6 +339,8 @@ class Home(AccountsUI, JellyfinUI, SetupUI, QObject):
         if self.running:
             if key == "home":  # alle anderen Tasten gehören der Seite im Player
                 self.go_home()
+        elif self.avatar_pick:
+            self.avatar_key(key)
         elif self.phone_pair:
             if key in ("back", "ok", "home"):
                 self.close_phone_pair()
@@ -1154,6 +1164,8 @@ class Home(AccountsUI, JellyfinUI, SetupUI, QObject):
             {"label": "Konto", "icon": "account", "desc": "Wer gerade schaut und eigene Logins",
              "items": [
                  {"kind": "info", "label": "Aktives Konto", "value": self.account["name"]},
+                 {"kind": "action", "label": "Profilbild ändern", "hint": "Farbe, Bild oder Foto",
+                  "run": lambda: self.with_pin(self.account, lambda: self.open_avatar_pick(self.account))},
                  {"kind": "action", "label": "Konto wechseln", "run": self.open_profiles},
              ]},
             {"label": "Darstellung", "icon": "display", "desc": f"Aussehen und Auflösung – Empfehlung passend zum {model}" if model else "Aussehen und Auflösung",
@@ -1315,9 +1327,10 @@ class Home(AccountsUI, JellyfinUI, SetupUI, QObject):
             return items
         items.append({"kind": "header", "label": "Netze in Reichweite" + (" – suche …" if w["scanning"] else "")})
         for net in w["nets"]:
-            hint = ("Verbunden · " if net["active"] else "") + network.signal_bars(net["signal"])
-            hint += "" if net["secure"] else " · offen"
-            items.append({"kind": "action", "label": net["ssid"], "hint": hint,
+            # rechts: „Verbunden“-Abzeichen, Schloss, WLAN-Symbol mit Signalstärke (SettingRow.qml)
+            items.append({"kind": "action", "label": net["ssid"], "hint": "",
+                          "wifi": {"level": max(1, min(4, (net["signal"] + 12) // 25)), "active": bool(net["active"]),
+                                   "secure": bool(net["secure"])},
                           "run": lambda net=net: self.wifi_select(net)})
         if not w["nets"] and not w["scanning"]:
             items.append({"kind": "info", "label": "Keine Netze gefunden", "value": ""})

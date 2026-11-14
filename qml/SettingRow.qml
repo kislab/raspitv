@@ -46,11 +46,51 @@ Item {
             weight: row.focused ? Font.DemiBold : Font.Normal
             color: parent.fg
         }
+        Row {  // WLAN-Netz: „Verbunden“, Schloss, Signalstärke
+            visible: !!row.item.wifi
+            anchors.right: inner.right
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: 0.9 * app.u
+            Rectangle {
+                visible: !!row.item.wifi && row.item.wifi.active
+                anchors.verticalCenter: parent.verticalCenter
+                width: okLabel.implicitWidth + 3.2 * app.u; height: 1.9 * app.u; radius: height / 2
+                color: row.focused ? Qt.rgba(0.06, 0.45, 0.2, 0.9) : Qt.rgba(0.5, 0.79, 0.58, 0.18)
+                Rectangle {
+                    x: 0.75 * app.u; anchors.verticalCenter: parent.verticalCenter
+                    width: 0.6 * app.u; height: width; radius: width / 2
+                    color: row.focused ? "white" : "#81c995"
+                }
+                Label {
+                    id: okLabel
+                    x: 1.8 * app.u; anchors.verticalCenter: parent.verticalCenter
+                    text: "Verbunden"
+                    size: 0.9 * app.u
+                    weight: Font.DemiBold
+                    color: row.focused ? "white" : "#81c995"
+                }
+            }
+            Icon {
+                visible: !!row.item.wifi && row.item.wifi.secure
+                anchors.verticalCenter: parent.verticalCenter
+                width: 1.15 * app.u
+                name: "lock"
+                color: row.focused ? app.dark : app.muted
+                hole: row.focused ? app.text : app.dark
+            }
+            Icon {
+                anchors.verticalCenter: parent.verticalCenter
+                width: 1.6 * app.u
+                name: "wifi"
+                level: row.item.wifi ? row.item.wifi.level : 4
+                color: row.focused ? app.dark : app.text
+            }
+        }
         Label {
             id: value
             anchors.fill: inner
             horizontalAlignment: Text.AlignRight
-            visible: row.item.kind !== "toggle"
+            visible: row.item.kind !== "toggle" && !row.item.wifi
             size: row.item.kind === "action" && (row.item.hint === null || row.item.hint === undefined) ? 1.5 * app.u : 1.05 * app.u
             color: parent.fgSoft
             text: {

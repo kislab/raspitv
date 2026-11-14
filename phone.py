@@ -9,6 +9,9 @@ Handy einen Schlüssel (localStorage); RaspiTV speichert die Schlüssel in den G
   POST /key         {"key": "up" | … | "volumeup" | "playpause"}   (Kopfzeile X-Token)
   POST /text        {"text": "...", "submit": false} Text in das offene Textfeld schreiben
   GET  /state       -> {"typing": bool, "title": str}  (Kopfzeile X-Token)
+  GET  /avatar      Seite zum Hochladen eines Profilbilds (phone/avatar.html)
+  POST /avatar      Bild (JPEG/PNG, höchstens 4 MB), Kopfzeile X-Upload: Einmal-Schlüssel aus dem QR-Code –
+                    gilt nur, solange am Fernseher die Profilbild-Auswahl offen ist (ohne Koppeln)
 
 Ohne gültigen Schlüssel antwortet alles außer / und /pair mit 401. Eigene Kopfzeile (X-Token) heißt:
 fremde Webseiten können ohne Rückfrage (CORS) keine Tasten schicken.
@@ -23,6 +26,8 @@ from pathlib import Path
 
 PORT = 8766
 PAGE = Path(__file__).resolve().parent / "phone" / "remote.html"
+AVATAR_PAGE = Path(__file__).resolve().parent / "phone" / "avatar.html"
+MAX_IMAGE = 4 * 1024 * 1024
 KEYS = {"up", "down", "left", "right", "ok", "back", "home", "menu", "volumeup", "volumedown", "mute", "playpause"}
 MAX_TOKENS = 10
 
@@ -38,6 +43,7 @@ class PhoneServer:
         self.on_paired = None     # wird nach erfolgreichem Koppeln aufgerufen
         self.fails = []           # Zeitpunkte falscher Codes (Bremse gegen Durchprobieren)
         self.server = None
+        self.upload = None        # Profilbild-Upload: {"token": str, "done": fn(bytes)} solange die Auswahl offen ist
 
     def running(self):
         return self.server is not None
@@ -103,9 +109,9 @@ class PhoneServer:
                 return data if isinstance(data, dict) else {}
 
             def do_GET(self):
-                if self.path in ("/", "/index.html"):
+                if self.path in ("/", "/index.html", "/avatar"):
                     try:
-                        page = PAGE.read_bytes()
+                        page = (AVATAR_PAGE if self.path == "/avatar" else PAGE).read_bytes()
                     except OSError:
                         return self.reply({"error": "page missing"}, 500)
                     self.send_response(200)
@@ -122,6 +128,8 @@ class PhoneServer:
                     self.reply({"error": "not found"}, 404)
 
             def do_POST(self):
+                if self.path == "/avatar":
+                    return self.avatar()
                 try:
                     data = self.body()
                 except (ValueError, TypeError):
@@ -142,6 +150,20 @@ class PhoneServer:
                     phone.on_text(text, bool(data.get("submit")))
                     return self.reply({"ok": True})
                 self.reply({"error": "not found"}, 404)
+
+            def avatar(self):
+                up = phone.upload
+                token = self.headers.get("X-Upload") or ""
+                if not up or not secrets.compare_digest(token, up["token"]):
+                    return self.reply({"error": "Am Fernseher ist die Profilbild-Auswahl nicht mehr offen"}, 403)
+                length = int(self.headers.get("Content-Length") or 0)
+                if not 0 < length <= MAX_IMAGE:
+                    return self.reply({"error": "Bild zu groß"}, 413)
+                data = self.rfile.read(length)
+                if not (data[:3] == b"\xff\xd8\xff" or data[:8] == b"\x89PNG\r\n\x1a\n"):
+                    return self.reply({"error": "Kein JPEG- oder PNG-Bild"}, 400)
+                up["done"](data)
+                return self.reply({"ok": True})
 
         return Handler
 

@@ -49,6 +49,9 @@ Mediacenter für den Raspberry Pi 4 im Stil von Google TV – bedienbar mit der 
   nicht wirklich schlafen legen, RaspiTV ruht also nur. Auch der Sleep-Timer schaltet den Fernseher aus. Umgekehrt:
   Fernseher mit seiner Fernbedienung aus → RaspiTV schläft mit; RaspiTV-Eingang am Fernseher gewählt → wacht auf.
   Ohne CEC (Monitor) bleibt es beim Bild aus. Tasten-Codes prüfen: `RASPITV_KEYLOG=1 python3 raspitv.py`.
+- **Profilbild** (Einrichtung → Benutzer, „Wer schaut?“ → OK lange → Profilbild ändern, Einstellungen → Konto):
+  Hintergrundfarbe, kleines Bild (Emoji) oder Foto vom Handy – QR-Code scannen (`phone/avatar.html`, Einmal-Schlüssel nur
+  solange die Auswahl offen ist), Foto wird mittig quadratisch zugeschnitten (`~/.local/share/raspitv/avatars/`).
 - **Kacheln anordnen**: OK lange gedrückt halten → Menü mit Öffnen, Verschieben, Deinstallieren.
 - **Lautstärke**: Lautstärke-Tasten der Fernbedienung stellen den Standard-Audioausgang (PipeWire); unter 20 % in
   2er-, sonst in 5er-Schritten, „lauter“ hebt Stumm auf. Anzeige als senkrechte Leiste links – gleich in RaspiTV
