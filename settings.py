@@ -194,8 +194,11 @@ def set_autostart(enabled):
         "Comment=Startet RaspiTV (ohne Terminal; Ausgaben in ~/.local/share/raspitv/raspitv.log)\n"
         # Startbild (läuft meist schon seit dem labwc-Autostart), über das Startbild die neueste Version von
         # GitHub holen (ohne Netz geht es mit der alten weiter), RaspiTV starten; endet RaspiTV, Startbild schließen
-        f'Exec=bash -c "mkdir -p {LOG.parent}; cd {ROOT} && (python3 splash.py &); '
-        f'{{ python3 splash.py --update; python3 raspitv.py; }} > {LOG} 2>&1; python3 splash.py --done"\n'
+        # Sperre: wird der Eintrag doppelt gestartet (kommt beim Pi-Desktop vor), endet der zweite sofort – er
+        # würde sonst die Protokolldatei leeren, mit „läuft bereits“ abbrechen und das Startbild zu früh schließen
+        f'Exec=bash -c "exec 9>/run/user/{os.getuid()}/raspitv-autostart.lock; flock -n 9 || exit 0; '
+        f'mkdir -p {LOG.parent}; cd {ROOT} && (python3 splash.py 9>&- &); '
+        f'{{ python3 splash.py --update; python3 raspitv.py; }} 9>&- > {LOG} 2>&1; python3 splash.py --done 9>&-"\n'
         "Icon=video-display\n"
         "Terminal=false\n"
     ))
