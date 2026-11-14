@@ -273,6 +273,7 @@ class RemoteKeeper:
         self.remote_macs = remote_macs
         self.paused = paused
         self.beat = {}  # MAC -> Zeitpunkt des letzten Herzschlags
+        self.lost = {}  # MAC -> seit wann getrennt (für das Protokoll)
         threading.Thread(target=self.run, daemon=True).start()
 
     def keepalive(self, mac):
@@ -296,6 +297,9 @@ class RemoteKeeper:
             waiting = [m for m in macs if not _connected(m)]
             for mac in macs:
                 if mac not in waiting:
+                    if mac in self.lost:
+                        print(f"{time.strftime('%H:%M:%S')} Fernbedienung wieder verbunden "
+                              f"({time.monotonic() - self.lost.pop(mac):.0f} s nach dem Trennen)", flush=True)
                     self.keepalive(mac)
             if not waiting:
                 time.sleep(3)
@@ -303,8 +307,17 @@ class RemoteKeeper:
             for mac in waiting:
                 if self.paused():
                     break
-                # BlueZ wartet bis zu ~30 s auf das Gerät; danach einfach neu versuchen
-                _run(["bluetoothctl", "--timeout", "35", "connect", mac], timeout=45)
+                self.lost.setdefault(mac, time.monotonic())
+                # Kurze Versuche: Ein Versuch, der ins Leere läuft, hängt in BlueZ sonst noch ~40 s weiter
+                # („InProgress“) und nimmt die aufgeweckte Fernbedienung nicht an – ein frischer Versuch
+                # verbindet sie dagegen sofort. Darum nach 6 s abbrechen (Disconnect bricht ihn ab) und neu.
+                path = "/org/bluez/hci0/dev_" + mac.upper().replace(":", "_")
+                ok, _ = _run(["busctl", "--timeout=6", "call", "org.bluez", path, "org.bluez.Device1", "Connect"],
+                             timeout=10)
+                if not ok and not _connected(mac):
+                    time.sleep(0.3)
+                if not ok and not _connected(mac):
+                    _run(["busctl", "call", "org.bluez", path, "org.bluez.Device1", "Disconnect"], timeout=5)
             time.sleep(0.5)
 
 
