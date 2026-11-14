@@ -49,6 +49,7 @@
       key: () => false,           // Taste in der eigenen Oberfläche behandeln           // gewähltes Element ist nur teilweise zu sehen (z. B. Karussell nachziehen)
       back: () => false,          // eigenes Zurück-Verhalten
       playPause: () => false,     // Play/Pause der Fernbedienung selbst erledigen (z. B. Musik-Player der Seite)
+      pause: () => false,         // RaspiTV geht zur Startseite: Wiedergabe der Seite selbst pausieren
     },
     home: () => chrome.runtime.sendMessage({ cmd: "home" }).catch(() => {}),
   });
@@ -661,7 +662,15 @@
     const t = /^toast:(\d+):(.*)$/s.exec(message.key || "");
     const typed = /^text:([01]):(.*)$/s.exec(message.key || "");
     const rw = /^remotewait:(\d+)$/.exec(message.key || "");
-    if (rw) {
+    if (message.key === "bgpause") {
+      // RaspiTV zeigt die Startseite, die App bleibt im Hintergrund offen: Wiedergabe anhalten
+      if (!inFrame && TV.site.pause()) return;
+      for (const m of document.querySelectorAll("video, audio")) {
+        try { if (!m.paused) m.pause(); } catch (e) { /* weiter */ }
+      }
+    } else if (message.key === "bgresume") {
+      if (!inFrame && TV.site.inPlayer()) TV.site.playerKey("info", false); // Leiste zeigen: hier geht es weiter
+    } else if (rw) {
       if (!inFrame) showRemoteWait(+rw[1]);
     } else if (typed) {
       if (inFrame) return; // Handy-Text geht in die Tastatur des Hauptfensters

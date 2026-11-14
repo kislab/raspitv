@@ -152,12 +152,23 @@ class Player:
             self.app_id = app["id"]
         calm_background()
 
+    def freeze(self, on):
+        """Player im Hintergrund anhalten (SIGSTOP: keine Rechenzeit, Hauptmenü bleibt flüssig) bzw. fortsetzen."""
+        with self.lock:
+            proc = self.proc
+        if proc and proc.poll() is None:
+            try:
+                os.killpg(proc.pid, signal.SIGSTOP if on else signal.SIGCONT)
+            except ProcessLookupError:
+                pass
+
     def stop(self):
         with self.lock:
             proc, self.proc, self.app_id = self.proc, None, None
         if not proc or proc.poll() is not None:
             return
         try:
+            os.killpg(proc.pid, signal.SIGCONT)  # angehaltener Player muss SIGTERM verarbeiten können
             os.killpg(proc.pid, signal.SIGTERM)
             proc.wait(timeout=5)
         except subprocess.TimeoutExpired:

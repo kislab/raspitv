@@ -53,7 +53,7 @@ class AccountsUI:
 
     def open_profiles(self):
         self.player.stop()
-        self.running = None
+        self.running = self.background = None
         self.view = "profiles"
         self.menu = self.dialog = None
         self.prof = max(0, self.acc_data["accounts"].index(self.account)) if self.account in self.acc_data["accounts"] else 0

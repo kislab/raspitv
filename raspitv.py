@@ -130,6 +130,7 @@ class Home(AccountsUI, JellyfinUI, SetupUI, QObject):
         self.vol = {"value": 0, "muted": False, "seq": 0}  # Lautstärke-Anzeige (seq zählt Tastendrücke)
         self.last_input = time.monotonic()  # letzter Tastendruck (Bildschirmschoner, Bildschirm aus)
         self.cec = None                # HDMI-CEC (Fernseher ein/aus), siehe main
+        self.background = None         # App, die im Hintergrund offen ist (pausiert, Player angehalten)
         self.tv_off_at = 0.0
         self.remote_lost = None        # seit wann die gekoppelte Fernbedienung getrennt ist
         self.remote_hint_sent = False           # wann der Fernseher sich per CEC abgemeldet hat
@@ -184,9 +185,9 @@ class Home(AccountsUI, JellyfinUI, SetupUI, QObject):
         """Den Hinweis auch über einer laufenden App zeigen (TV-Erweiterung bzw. Jellyfin-Player).
         Läuft nach 3 s von selbst ab und wird darum jede Sekunde erneuert."""
         wait = self.remote_wait()
-        if wait and self.player.running():
+        if wait and self.app_front():
             remote.notify("remotewait:3")
-        elif self.remote_hint_sent and self.player.running():
+        elif self.remote_hint_sent and self.app_front():
             remote.notify("remotewait:0")
         if wait and self.mpv.running():
             self.mpv.show_toast(self.REMOTE_WAIT, 3)
@@ -501,7 +502,11 @@ class Home(AccountsUI, JellyfinUI, SetupUI, QObject):
     # ---------- Dienste starten ----------
 
     def launch(self, app):
+        if self.background and self.background["id"] == app["id"] and self.player.running() == app["id"]:
+            return self.resume_background(self.background)
+        self.background = None
         if app["id"] == "jellyfin":  # eigene App in RaspiTV statt Webseite im Player
+            self.player.stop()      # eine andere App öffnen: die im Hintergrund schließen
             return self.open_jellyfin()
         if app.get("server"):  # Adresse kommt aus den Einstellungen (z. B. eigener Jellyfin-Server)
             url = self.server_url(app["server"])
@@ -557,10 +562,44 @@ class Home(AccountsUI, JellyfinUI, SetupUI, QObject):
         if self.window:
             self.window.requestActivate()
 
-    def go_home(self):
-        self.player.stop()
+    def go_home(self, stop=False):
+        """Zur Startseite. Die App bleibt im Hintergrund offen (Wiedergabe pausiert, Player angehalten), bis
+        eine andere App geöffnet wird – öffnet man dieselbe wieder, geht es genau dort weiter."""
+        if self.running and not stop and self.player.running() == self.running["id"]:
+            remote.notify("bgpause")  # Wiedergabe in der Seite pausieren …
+            self.background = self.running
+            app_id = self.running["id"]
+            # … und den Player kurz danach anhalten (vorher muss die Pause noch ankommen)
+            QTimer.singleShot(1200, lambda: self.background and self.background["id"] == app_id
+                              and not self.running and self.player.freeze(True))
+        else:
+            self.player.stop()
+            self.background = None
         self.running = self.dialog = None
-        self.activate_window()
+        self.raise_window()
+
+    def app_front(self):
+        """Läuft eine App im Player und liegt vorne (nicht nur angehalten im Hintergrund)?"""
+        return bool(self.running) and bool(self.player.running())
+
+    def raise_window(self):
+        """RaspiTV vor den Player holen. Unter Wayland kann ein Fenster sich nicht selbst nach vorn bringen –
+        neu eingeblendet legt labwc es aber ganz nach oben."""
+        if self.window and self.window.isVisible() and not self.player.running():
+            return self.activate_window()
+        if self.window:
+            self.window.hide()
+            self.window.showFullScreen()
+
+    def resume_background(self, app):
+        """Dieselbe App wieder öffnen: Player fortsetzen und RaspiTV ausblenden (der Player liegt dahinter)."""
+        self.player.freeze(False)
+        self.running, self.background = app, None
+        self.started = time.monotonic() - COVERED_AFTER
+        self.dialog = None
+        remote.notify("bgresume")
+        if self.window:
+            self.window.hide()
 
     def close_dialog(self):
         self.dialog = None
@@ -618,7 +657,9 @@ class Home(AccountsUI, JellyfinUI, SetupUI, QObject):
             self.activate_window()
         if self.ticks % 15 == 0 and not self.running:
             self.update_wifi_name()
-        if self.rate_restore and not self.player.running() and not self.mpv.running():
+        if self.background and self.player.running() != self.background["id"]:
+            self.background = None  # Player wurde beendet
+        if self.rate_restore and not self.running and not self.mpv.running():
             self.restore_rate()
         now = time.monotonic()
         self.check_sleep(now)
@@ -677,7 +718,7 @@ class Home(AccountsUI, JellyfinUI, SetupUI, QObject):
         im Jellyfin-Player (mpv), in Netflix & Co. (TV-Erweiterung) und in RaspiTV selbst."""
         if self.mpv.running():
             self.mpv.show_volume(volume, muted)
-        if self.player.running():
+        if self.app_front():
             remote.notify(f"volume:{volume}:{int(muted)}")
 
         def update():
@@ -794,14 +835,14 @@ class Home(AccountsUI, JellyfinUI, SetupUI, QObject):
         """Hinweis oben einblenden – in RaspiTV, im Jellyfin-Player und in Netflix & Co."""
         self.toast = {"text": text, "seq": (self.toast or {}).get("seq", 0) + 1}
         self.toast_until = time.monotonic() + seconds
-        if self.player.running():
+        if self.app_front():
             remote.notify(f"toast:{seconds}:{text}")
         if self.mpv.running():
             self.mpv.show_toast(text, seconds)
 
     def hide_toast(self):
         self.toast = None
-        if self.player.running():
+        if self.app_front():
             remote.notify("toast:0:")
         if self.mpv.running():
             self.mpv.show_toast("")
@@ -898,7 +939,7 @@ class Home(AccountsUI, JellyfinUI, SetupUI, QObject):
             o["error"] = ""
             if submit or (o["mode"] == "pin" and len(o["value"]) == PIN_LEN):
                 o["done"](o["value"])
-        elif self.player.running():
+        elif self.app_front():
             remote.notify(f"text:{int(submit)}:{text}")
 
     # ---------- Einstellungen ----------
@@ -1539,12 +1580,10 @@ def main():
     home.window = view
 
     def on_key(key):
-        if key == "home":
-            player.stop()  # sofort, auch wenn die Oberfläche gerade verdeckt ist
         home.key.emit(key)
 
     try:
-        remote.start(on_key, player.running, home.video_rate, home.phone_qr)
+        remote.start(on_key, player.running, home.video_rate, home.phone_qr, lambda: bool(home.running))
     except OSError:
         sys.exit("RaspiTV läuft bereits (Port 8765 ist belegt).")
     # Bluetooth-Fernbedienungen direkt lesen (auch während der Player vorne liegt)

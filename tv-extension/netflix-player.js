@@ -146,6 +146,7 @@
     try {
       const p = player();
       if (key === "ok") p.isPaused() ? p.play() : p.pause();
+      else if (key === "pause") { if (!p.isPaused()) p.pause(); }
       else if (key === "left") { p.seek(Math.max(0, p.getCurrentTime() - SEEK_MS)); hint = "« 10 Sekunden zurück"; }
       else if (key === "right") { p.seek(Math.min(p.getDuration() - 1000, p.getCurrentTime() + SEEK_MS)); hint = "10 Sekunden vor »"; }
     } catch (error) {

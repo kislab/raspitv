@@ -47,6 +47,12 @@
 
     inPlayer: () => location.pathname.startsWith("/watch"),
 
+    pause() {
+      if (!location.pathname.startsWith("/watch")) return false;
+      window.dispatchEvent(new CustomEvent("tv-player", { detail: "pause" })); // Netflix-Schnittstelle (MAIN)
+      return true;
+    },
+
     playerKey(key, fromKeyboard) {
       if (key === "back") {
         // Leiste (oder „Überspringen“) eingeblendet: Zurück blendet nur sie aus; sonst Video verlassen

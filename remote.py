@@ -30,7 +30,7 @@ def notify(message):
     """Nachricht an die TV-Erweiterung (z. B. "volume:45:0" für die Lautstärke-Anzeige); von start() ersetzt."""
 
 
-def start(on_key, get_status, on_video=None, on_phone_qr=None):
+def start(on_key, get_status, on_video=None, on_phone_qr=None, foreground=lambda: True):
     """Startet den Server in einem Hintergrund-Thread. on_key wird dort aufgerufen.
 
     Danach nimmt `remote.press(key)` Tasten direkt angeschlossener Fernbedienungen an (remote_input.py):
@@ -119,14 +119,16 @@ def start(on_key, get_status, on_video=None, on_phone_qr=None):
             if key not in KEYS:
                 return self.reply({"error": "unknown key"}, 400)
             on_key(key)
-            if origin is None and key not in LOCAL:  # nicht an die Erweiterung zurückschicken
+            if origin is None and key not in LOCAL and foreground():  # nicht an die Erweiterung zurückschicken
                 publish(key)
             self.reply({"ok": True})
 
     def press_key(key):
         if key != "playpause":
             on_key(key)
-        if key not in LOCAL:  # Menü, Ein/Aus usw. gelten nur RaspiTV
+        # Menü, Ein/Aus usw. gelten nur RaspiTV; liegt die App nur angehalten im Hintergrund, bekommt sie nichts
+        # (sonst kämen beim Fortsetzen alle Tasten aus dem Hauptmenü auf einmal an)
+        if key not in LOCAL and foreground():
             publish(key)
     press = press_key
     notify = publish

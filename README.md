@@ -52,6 +52,9 @@ Mediacenter für den Raspberry Pi 4 im Stil von Google TV – bedienbar mit der 
 - **Profilbild** (Einrichtung → Benutzer, „Wer schaut?“ → OK lange → Profilbild ändern, Einstellungen → Konto):
   Hintergrundfarbe, kleines Bild (Emoji) oder Foto vom Handy – QR-Code scannen (`phone/avatar.html`, Einmal-Schlüssel nur
   solange die Auswahl offen ist), Foto wird mittig quadratisch zugeschnitten (`~/.local/share/raspitv/avatars/`).
+- **App im Hintergrund**: Home bzw. Zurück zur Startseite pausiert die Wiedergabe (`bgpause` an die Erweiterung) und hält
+  den Player an (SIGSTOP – keine Rechenzeit, Hauptmenü bleibt flüssig). Dieselbe App wieder öffnen setzt ihn fort (RaspiTV
+  blendet sich aus, der Player liegt dahinter), eine andere App schließt ihn. Tasten gehen nur an die vordere App.
 - **Kacheln anordnen**: OK lange gedrückt halten → Menü mit Öffnen, Verschieben, Deinstallieren.
 - **Lautstärke**: Lautstärke-Tasten der Fernbedienung stellen den Standard-Audioausgang (PipeWire); unter 20 % in
   2er-, sonst in 5er-Schritten, „lauter“ hebt Stumm auf. Anzeige als senkrechte Leiste links – gleich in RaspiTV
