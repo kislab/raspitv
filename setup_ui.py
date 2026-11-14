@@ -6,6 +6,7 @@ Neustart-Recht, Entschlacken) → Homescreen. Ist in einem Schritt etwas eingeri
 Bedienung wie überall in RaspiTV: Fernbedienung, Tastatur oder Handy; Texte über die Bildschirmtastatur.
 Systemänderungen laufen über boot/setup.sh mit sudo – install.sh hat das Passwort vorher im Terminal abgefragt.
 """
+import math
 import os
 import re
 import subprocess
@@ -19,16 +20,19 @@ from PyQt5.QtCore import QTimer
 ROOT = Path(__file__).resolve().parent
 FOCUSABLE = ("toggle", "choice", "action", "range")
 
-# Einrichtungsschritte (boot/setup.sh) mit Anteil am Ladebalken
+# Einrichtungsschritte (boot/setup.sh) mit Anteil am Ladebalken und ungefährer Zahl ihrer Ausgabezeilen
+# (daran rückt der Balken innerhalb eines Schritts gleichmäßig vor, statt gleich voll zu sein)
 INSTALL_STEPS = [
-    ("packages", "Programme installieren", 25),
-    ("entries", "Startmenü und Desktop-Symbole", 2),
-    ("autostart", "Start beim Hochfahren", 2),
-    ("bootlogo", "RaspiTV-Bootbild", 18),
-    ("bluetooth", "Bluetooth für Fernbedienungen", 3),
-    ("power", "Neustart und Ausschalten erlauben", 2),
-    ("slim", "System entschlacken", 48),
+    ("packages", "Programme installieren", 25, 250),
+    ("entries", "Startmenü und Desktop-Symbole", 2, 5),
+    ("autostart", "Start beim Hochfahren", 2, 5),
+    ("bootlogo", "RaspiTV-Bootbild", 18, 60),
+    ("bluetooth", "Bluetooth für Fernbedienungen", 3, 5),
+    ("power", "Neustart und Ausschalten erlauben", 2, 5),
+    ("slim", "System entschlacken", 48, 700),
 ]
+ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+REBOOT_IN = 10  # Sekunden bis zum Neustart nach der Einrichtung
 STEP_ORDER = ["remote", "welcome", "account", "wifi", "update", "install"]
 MAC_NAME = re.compile(r"^([0-9A-F]{2}[-:]){5}[0-9A-F]{2}$", re.I)  # Geräte ohne Namen (meist keine Fernbedienung)
 
@@ -41,8 +45,8 @@ class SetupUI:
         if "--setup" in sys.argv:
             skip = set(os.environ.get("RASPITV_SETUP_SKIP", "").split())
             self.setup = {"step": "remote", "item": 0, "update": None, "updated": False,
-                          "steps": [{"id": i, "label": l, "weight": w, "state": "skip" if i in skip else "wait"}
-                                    for i, l, w in INSTALL_STEPS],
+                          "steps": [{"id": i, "label": l, "weight": w, "lines": n, "state": "skip" if i in skip else "wait"}
+                                    for i, l, w, n in INSTALL_STEPS],
                           "progress": 0.0, "line": "", "error": ""}
             self.view = "setup"
             QTimer.singleShot(800, self.setup_enter_remote)
@@ -108,7 +112,7 @@ class SetupUI:
                     "Logins kannst du später unter „Konto“ anlegen."),
         "wifi": ("WLAN aussuchen", "Wähle dein WLAN. Mit Kabel oder bestehender Verbindung kannst du einfach weiter."),
         "update": ("Auf Updates prüfen", "RaspiTV holt sich die neueste Version."),
-        "install": ("RaspiTV wird eingerichtet", "Das dauert ein paar Minuten. Danach geht es direkt zum Homescreen."),
+        "install": ("RaspiTV wird eingerichtet", "Das dauert ein paar Minuten. Danach startet der Raspberry Pi einmal neu."),
     }
 
     def setup_keep_selection(self, items, focusable):
@@ -144,6 +148,7 @@ class SetupUI:
                 "title": title, "text": text, "item": st["item"],
                 "items": [self.item_info(it) for it in items],
                 "progress": st["progress"], "line": st["line"], "error": st["error"],
+                "percent": 100 if st["line"] == "Fertig" else min(99, int(st["progress"] * 100)),
                 "steps": [{"label": s["label"], "state": s["state"]} for s in st["steps"]]}
 
     # ---------- Tasten ----------
@@ -280,12 +285,12 @@ class SetupUI:
                     self.bgDone.emit(lambda: None)
                     return
                 for line in proc.stdout:
-                    line = line.strip()
+                    line = ANSI.sub("", line).replace("==>", "").strip()  # Terminal-Farben und Pfeile weg
                     if not line:
                         continue
                     lines += 1
-                    # innerhalb eines Schritts langsam vorrücken (Ausgaben zählen), nie ganz bis zum Ende
-                    frac = 1 - 0.985 ** lines
+                    # innerhalb eines Schritts nach Ausgabezeilen vorrücken (erwartete Zahl je Schritt), nie ganz voll
+                    frac = min(0.95, 1 - math.exp(-lines / s["lines"]))
                     st["progress"] = (done + s["weight"] * frac) / total
                     st["line"] = line[:120]
                     self.bgDone.emit(lambda: None)
@@ -318,4 +323,31 @@ class SetupUI:
             # neue Version geladen: RaspiTV in diesem Prozess neu laden, damit der Homescreen schon die neue ist
             os.execv(sys.executable, [sys.executable, str(ROOT / "raspitv.py"), "--after-setup"])
         self.view = "home"
-        self.show_toast("RaspiTV ist eingerichtet – ganz wirksam nach dem nächsten Neustart", 8)
+        self.offer_reboot()
+
+    def offer_reboot(self):
+        """Nach der Einrichtung neu starten (Bootbild, Autostart, Entschlackung werden erst dann ganz wirksam):
+        Hinweis mit Countdown, „Später“ bricht ab."""
+        state = {"left": REBOOT_IN}
+
+        def later():
+            state["left"] = -1
+            self.dialog = None
+            self.show_toast("RaspiTV ist eingerichtet – ganz wirksam nach dem nächsten Neustart", 8)
+
+        def now():
+            state["left"] = -1
+            self.system("Neu starten", "reboot", ask=False)
+
+        def tick():
+            if state["left"] < 0 or not self.dialog or self.dialog.get("reboot") is not state:
+                return
+            if state["left"] == 0:
+                return now()
+            self.dialog["sub"] = f"Der Raspberry Pi startet in {state['left']} Sekunden neu, damit alles wirksam wird."
+            state["left"] -= 1
+            QTimer.singleShot(1000, tick)
+            self.push()
+        self.dialog = {"text": "RaspiTV ist eingerichtet", "sub": "", "index": 0, "reboot": state, "cancel": later,
+                       "buttons": [("Jetzt neu starten", now), ("Später", later)]}
+        tick()

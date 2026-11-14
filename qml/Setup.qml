@@ -144,6 +144,14 @@ Item {
                     Behavior on width { NumberAnimation { duration: app.ms(400); easing.type: Easing.OutCubic } }
                 }
             }
+            Label {  // Prozent
+                anchors.right: parent.right
+                y: -3.6 * app.u; height: 2.8 * app.u
+                text: page.st ? page.st.percent + " %" : ""
+                size: 2 * app.u
+                weight: Font.Bold
+                color: page.st && page.st.error ? "#f28b82" : "white"
+            }
             Label {
                 y: 1.4 * app.u; height: 1.8 * app.u; width: parent.width
                 text: page.st ? (page.st.error || page.st.line) : ""

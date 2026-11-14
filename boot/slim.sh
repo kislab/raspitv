@@ -10,6 +10,22 @@
 # Connect, avahi (raspi.local), Ton (PipeWire), Schlüsselbund (Chromium-Logins), Firmware-Updates (rpi-eeprom).
 set -uo pipefail
 
+# Paketverwaltung nie nachfragen lassen: Rückfragen (z. B. „Standard-Wörterbuch?“ beim Entfernen von wbritish)
+# erscheinen sonst unsichtbar im Terminal hinter dem Einrichtungs-Assistenten, und alles bleibt stehen.
+# sudo verwirft DEBIAN_FRONTEND – darum über env weiterreichen; im Assistenten (RASPITV_SUDO_N) nie nach dem
+# Passwort fragen (gleiches Problem).
+export DEBIAN_FRONTEND=noninteractive
+sudo() {
+  local n=()
+  [ -n "${RASPITV_SUDO_N:-}" ] && n=(-n)
+  case "${1:-}" in
+    -*) command sudo "${n[@]}" "$@" ;;
+    apt-get) shift; command sudo "${n[@]}" env DEBIAN_FRONTEND=noninteractive apt-get \
+               -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold "$@" ;;
+    *) command sudo "${n[@]}" env DEBIAN_FRONTEND=noninteractive "$@" ;;
+  esac
+}
+
 STATE="${XDG_CONFIG_HOME:-$HOME/.config}/raspitv/slim"
 DIR="$(dirname "$(dirname "$(readlink -f "$0")")")"
 say() { printf '\033[1;36m==>\033[0m %s\n' "$*"; }
@@ -137,6 +153,7 @@ if [ -n "$INSTALLED" ]; then
     echo "!! Abbruch: apt würde auch Wichtiges entfernen: $HIT"
     exit 1
   fi
+  sudo dpkg --configure -a  # falls ein früherer Lauf mittendrin abbrach (sonst verweigert apt alles)
   # shellcheck disable=SC2086
   sudo apt-get remove --purge -y $INSTALLED && sudo apt-get autoremove --purge -y
   sudo apt-get clean

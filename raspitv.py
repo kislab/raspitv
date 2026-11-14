@@ -1635,6 +1635,8 @@ def main():
         signal.signal(signal.SIGHUP, lambda *_: app.quit())  # Terminal wurde geschlossen
     QTimer(app, interval=200, timeout=lambda: None).start()  # Python-Signale auch während Qt läuft annehmen
     view.showFullScreen()
+    if "--after-setup" in sys.argv:  # Einrichtung mit neuer Version beendet: Neustart anbieten
+        QTimer.singleShot(1500, home.offer_reboot)
 
     # Startbild (splash.py) schließen, sobald das erste Bild der Oberfläche zu sehen ist
     def ready():

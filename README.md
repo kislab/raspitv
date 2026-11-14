@@ -100,7 +100,8 @@ curl -fsSL https://raw.githubusercontent.com/kislab/raspitv/main/install.sh | ba
 Das fragt einmal nach dem sudo-Passwort, installiert, was die Oberfläche braucht (Python, Qt), lädt RaspiTV nach
 `~/raspitv` und öffnet den **Einrichtungs-Assistenten** auf dem Bildschirm – bedienbar mit Fernbedienung, Tastatur
 oder Handy: **Fernbedienung koppeln** (zuerst; stellt dafür gleich Bluetooth ein und sucht nur per Bluetooth LE) →
-Willkommen → Benutzer anlegen → WLAN aussuchen → Auf Updates prüfen → Einrichten (Ladebalken) → Homescreen.
+Willkommen → Benutzer anlegen → WLAN aussuchen → Auf Updates prüfen → Einrichten (Ladebalken mit Prozent) →
+Neustart nach 10 s Countdown („Später“ bricht ab) → Homescreen.
 Ist in einem Schritt etwas eingerichtet (Fernbedienung gekoppelt, Name bestätigt, WLAN verbunden), wird „Weiter“ blau
 und gleich ausgewählt. Beim Einrichten (`boot/setup.sh`) kommen dazu: die übrigen Programme (`chromium`, `libwidevinecdm0`,
 `mpv` …), Startmenü-Eintrag und Desktop-Symbole, Start beim Hochfahren (ohne Desktop und Terminal; ein Startbild

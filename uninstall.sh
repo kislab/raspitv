@@ -12,9 +12,26 @@
 #   - Regel für Neustart/Ausschalten ohne Passwort (/etc/polkit-1/rules.d/50-raspitv-power.rules)
 #   - Pakete, die RaspiTV nachinstalliert hat (nicht Chromium, git usw., die schon da waren)
 #   - Entschlackung (boot/slim.sh): entfernte Programme, abgeschaltete Dienste, config.txt, Protokoll-Einstellung
-#   - Einstellungen, Konten und Logins (Netflix, Disney+, Jellyfin …) sowie den Ordner ~/raspitv
+#   - Einstellungen, Konten, Profilbilder und Logins (Netflix, Disney+, Jellyfin …), Zwischenspeicher (~/.cache)
+#     sowie den Ordner ~/raspitv
 # Gekoppelte Bluetooth-Geräte (z. B. die Fernbedienung) und WLAN-Verbindungen bleiben erhalten.
 set -uo pipefail
+
+# Paketverwaltung nie nachfragen lassen: Rückfragen (z. B. „Standard-Wörterbuch?“ beim Entfernen von wbritish)
+# erscheinen sonst unsichtbar im Terminal hinter dem Einrichtungs-Assistenten, und alles bleibt stehen.
+# sudo verwirft DEBIAN_FRONTEND – darum über env weiterreichen; im Assistenten (RASPITV_SUDO_N) nie nach dem
+# Passwort fragen (gleiches Problem).
+export DEBIAN_FRONTEND=noninteractive
+sudo() {
+  local n=()
+  [ -n "${RASPITV_SUDO_N:-}" ] && n=(-n)
+  case "${1:-}" in
+    -*) command sudo "${n[@]}" "$@" ;;
+    apt-get) shift; command sudo "${n[@]}" env DEBIAN_FRONTEND=noninteractive apt-get \
+               -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold "$@" ;;
+    *) command sudo "${n[@]}" env DEBIAN_FRONTEND=noninteractive "$@" ;;
+  esac
+}
 
 SELF="$(readlink -f "$0")"
 DIR="${RASPITV_DIR:-$(dirname "$SELF")}"  # beim Lauf aus der Kopie: Ordner vom Original
@@ -136,6 +153,9 @@ fi
 # 5. Daten, Logins und Programm
 say "Lösche Einstellungen, Konten und Logins"
 rm -rf "$CONFIG/raspitv" "$DATA/raspitv"
+# Zwischenspeicher: umgefärbte Logos und Qts vorübersetzte Oberfläche
+CACHE="${XDG_CACHE_HOME:-$HOME/.cache}"
+rm -rf "$CACHE/raspitv" "$CACHE/raspitv.py"
 rm -f /tmp/raspitv-mpv.log /tmp/raspitv-mpv-*.sock /tmp/raspitv-top.txt
 say "Lösche den Programm-Ordner $DIR"
 rm -rf "$DIR"
