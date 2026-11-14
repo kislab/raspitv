@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "RaspiTV Bedienung",
-  "version": "2.19",
+  "version": "2.21",
   "description": "Macht Streaming-Webseiten im RaspiTV-Player mit der Fernbedienung bedienbar.",
   "host_permissions": [
     "http://127.0.0.1:8765/*"
@@ -18,7 +18,7 @@
         "youtube-quality.js"
       ],
       "world": "MAIN",
-      "run_at": "document_idle"
+      "run_at": "document_start"
     },
     {
       "matches": [

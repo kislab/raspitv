@@ -1,7 +1,11 @@
-// YouTube: Qualität je Video festlegen (höchste verfügbare bis 1080p) statt sie YouTube automatisch wechseln
-// zu lassen. Wechselt YouTube mitten im laufenden Video die Auflösung (z. B. 720p → 480p), bleibt der
-// Hardware-Decoder des Pi 4 (V4L2) stehen: Bild friert nach wenigen Sekunden ein, „lädt“ dann ~30 s.
-// Eine fest gewählte Qualität baut den Puffer dagegen sauber neu auf – danach wechselt nichts mehr.
+// YouTube: Einfrieren nach wenigen Sekunden verhindern.
+//
+// Wechselt YouTube mitten im laufenden Video die Auflösung (z. B. 360p → 720p), bleibt der Hardware-Decoder des
+// Pi 4 (V4L2) stehen: das Bild friert ein, die Zeit läuft nicht weiter, obwohl genug geladen ist.
+// 1. Qualität je Video festlegen (höchste verfügbare bis 1080p) – so früh wie möglich, damit danach nichts mehr
+//    wechselt. Beim allerersten Video nach dem Öffnen läuft es aber oft schon in niedriger Qualität los.
+// 2. Wächter: Steht das Video trotz Puffer still, einmal an dieselbe Stelle springen – das setzt den Decoder neu
+//    auf, und es geht sofort weiter (getestet: 360p → 720p eingefroren, nach dem Sprung läuft 720p).
 // Läuft in der Seite selbst (MAIN), weil nur dort die Player-Schnittstelle erreichbar ist.
 (() => {
   const ORDER = ["hd1080", "hd720", "large", "medium", "small", "tiny"]; // höchstens 1080p (media-limit.js)
@@ -18,5 +22,31 @@
     lockedFor = id;
     p.setPlaybackQualityRange(best, best);
   }
-  setInterval(lock, 300);
+
+  let last = { time: -1, frames: -1, since: 0 };
+  let nudgedAt = 0;
+  function watch() {
+    const v = document.querySelector("video");
+    if (!v || v.paused || v.ended || v.seeking || !v.src) { last.since = 0; return; }
+    const frames = v.getVideoPlaybackQuality ? v.getVideoPlaybackQuality().totalVideoFrames : 0;
+    const now = performance.now();
+    if (v.currentTime !== last.time || frames !== last.frames) {
+      last = { time: v.currentTime, frames, since: now };
+      return;
+    }
+    // steht still: nur eingreifen, wenn genug geladen ist (sonst lädt es einfach noch)
+    let ahead = 0;
+    for (let i = 0; i < v.buffered.length; i++) {
+      if (v.buffered.start(i) <= v.currentTime + 0.1 && v.buffered.end(i) > v.currentTime) {
+        ahead = v.buffered.end(i) - v.currentTime;
+      }
+    }
+    if (ahead > 1 && now - last.since > 1500 && now - nudgedAt > 4000) {
+      nudgedAt = now;
+      last.since = now;
+      v.currentTime = v.currentTime; // Decoder neu aufsetzen
+    }
+  }
+
+  setInterval(() => { lock(); watch(); }, 250);
 })();

@@ -21,6 +21,11 @@
   }
 
   chrome.runtime.onMessage.addListener((message) => {
+    if (message.key === "bgpause") {
+      // RaspiTV geht zur Startseite (YouTube bleibt angehalten im Hintergrund): vorher sauber pausieren
+      for (const v of document.querySelectorAll("video")) { try { if (!v.paused) v.pause(); } catch (e) { /* weiter */ } }
+      return;
+    }
     if (KEYS[message.key]) press(message.key);
   });
 })();
