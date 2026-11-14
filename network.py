@@ -8,6 +8,7 @@ import re
 import subprocess
 import threading
 import time
+from pathlib import Path
 
 # ---------- Hilfen ----------
 
@@ -278,6 +279,7 @@ class RemoteKeeper:
         self.beat = {}  # MAC -> Zeitpunkt des letzten Herzschlags
         self.lost = {}  # MAC -> seit wann getrennt (für das Protokoll)
         self.fails = {}  # MAC -> vergebliche Versuche in Folge
+        self.since = {}  # MAC -> seit wann verbunden
         threading.Thread(target=self.run, daemon=True).start()
 
     def keepalive(self, mac):
@@ -299,6 +301,13 @@ class RemoteKeeper:
                 time.sleep(3)
                 continue
             waiting = [m for m in macs if not _connected(m)]
+            now = time.monotonic()
+            for mac in macs:  # Trennungen dauerhaft mitschreiben (wann schläft die Fernbedienung von selbst ein?)
+                if mac in waiting and mac in self.since:
+                    _remote_log(f"getrennt nach {(now - self.since.pop(mac)) / 60:.0f} min Verbindung")
+                elif mac not in waiting and mac not in self.since:
+                    self.since[mac] = now
+                    _remote_log("verbunden")
             for mac in macs:
                 if mac not in waiting:
                     if mac in self.lost:
@@ -332,6 +341,20 @@ class RemoteKeeper:
                 else:
                     self.fails.pop(mac, None)
             time.sleep(0.5)
+
+
+REMOTE_LOG = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local/share")) / "raspitv" / "remote.log"
+
+
+def _remote_log(text):
+    """~/.local/share/raspitv/remote.log: Verbinden/Trennen der Fernbedienung (bleibt über Neustarts, max. ~200 Zeilen)."""
+    try:
+        REMOTE_LOG.parent.mkdir(parents=True, exist_ok=True)
+        lines = REMOTE_LOG.read_text(encoding="utf-8").splitlines()[-199:] if REMOTE_LOG.exists() else []
+        lines.append(f"{time.strftime('%Y-%m-%d %H:%M:%S')} {text}")
+        REMOTE_LOG.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    except OSError:
+        pass
 
 
 def _battery_char(mac):
