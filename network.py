@@ -277,6 +277,7 @@ class RemoteKeeper:
         self.paused = paused
         self.beat = {}  # MAC -> Zeitpunkt des letzten Herzschlags
         self.lost = {}  # MAC -> seit wann getrennt (für das Protokoll)
+        self.fails = {}  # MAC -> vergebliche Versuche in Folge
         threading.Thread(target=self.run, daemon=True).start()
 
     def keepalive(self, mac):
@@ -321,6 +322,15 @@ class RemoteKeeper:
                     time.sleep(0.3)
                 if not ok and not _connected(mac):
                     _run(["busctl", "call", "org.bluez", path, "org.bluez.Device1", "Disconnect"], timeout=5)
+                    # BlueZ verbindet über die Funkart, auf der es das Gerät zuletzt gesehen hat. Hält es eine
+                    # LE-Fernbedienung für „klassisch“ (BR/EDR), scheitert jeder Versuch („br-connection-…“,
+                    # „In Progress“) – bis eine LE-Suche sie wieder als LE sieht. Darum jeder dritte Versuch mit
+                    # kurzer LE-Suche davor (fängt nebenbei die Werbung der gerade geweckten Fernbedienung).
+                    self.fails[mac] = self.fails.get(mac, 0) + 1
+                    if self.fails[mac] % 3 == 0 and not self.paused():
+                        _run(["bluetoothctl", "--timeout", "3", "scan", "le"], timeout=10)
+                else:
+                    self.fails.pop(mac, None)
             time.sleep(0.5)
 
 
