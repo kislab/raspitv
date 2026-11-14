@@ -35,7 +35,7 @@ KEYS = {
     115: "volumeup", 114: "volumedown", 113: "mute",
     116: "power", 142: "power",                        # POWER, SLEEP
 }
-POWER_LONG = 1.0  # Ein/Aus länger halten: Ausschalten anbieten
+HOME_LONG = 1.0  # Home so lange halten: Ein/Aus-Menü (Ein/Aus selbst meldet z. B. bei Fire-TV-Fernbedienungen kein Halten)
 
 
 def _has_key(bits_hex, code):
@@ -79,7 +79,8 @@ class RemoteInput:
         self.scanned = False
         self.open = {}              # Pfad -> Dateideskriptor
         self.ok_down = None
-        self.power_down = None
+        self.home_down = None       # Home gedrückt seit (None: losgelassen oder schon als „lang“ erledigt)
+        self.home_long = False
         self.unknown = set()
         threading.Thread(target=self.run, daemon=True).start()
 
@@ -143,12 +144,13 @@ class RemoteInput:
                 self.ok_down = None
                 self.press("ok")
             return
-        if key == "power":  # kurz = schlafen / aufwachen, lang = Ausschalten anbieten
+        if key == "home":  # kurz = Startseite, lang = Ein/Aus-Menü
             if value == 1:
-                self.power_down = time.monotonic()
-            elif value == 0 and self.power_down is not None:
-                self.power_down = None
-                self.press("power")
+                self.home_down, self.home_long = time.monotonic(), False
+            elif value == 0:
+                if not self.home_long:
+                    self.press("home")
+                self.home_down = None
             return
         if value == 0:
             return
@@ -164,6 +166,6 @@ class RemoteInput:
         if self.ok_down is not None and time.monotonic() - self.ok_down >= LONG_PRESS:
             self.ok_down = None
             self.press("menu")
-        if self.power_down is not None and time.monotonic() - self.power_down >= POWER_LONG:
-            self.power_down = None
+        if self.home_down is not None and time.monotonic() - self.home_down >= HOME_LONG:
+            self.home_down, self.home_long = None, True
             self.press("poweroff")

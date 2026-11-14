@@ -53,7 +53,9 @@ Item {
         anchors.fill: parent
         visible: !!s.menu
         anchorRect: !s.menu ? Qt.rect(0, 0, 0, 0)
-                    : s.menu.anchor === "profile" ? profiles.entryRect(s.menu.at) : home.tileRect(s.menu.at)
+                    : s.menu.anchor === "profile" ? profiles.entryRect(s.menu.at)
+                    : s.menu.anchor === "center" ? Qt.rect(width / 2, height / 2 + 7 * app.u, 0, 0)  // Ein/Aus-Menü
+                    : home.tileRect(s.menu.at)
     }
     Dialog { anchors.fill: parent; visible: !!s.dialog }
     Osk { anchors.fill: parent; visible: !!s.osk }

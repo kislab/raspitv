@@ -43,7 +43,7 @@ Mediacenter für den Raspberry Pi 4 im Stil von Google TV – bedienbar mit der 
   meldet (BlueZ „Battery Percentage“), ab 15 % rot mit einmaligem Hinweis „Akku fast leer“. Nötig: Bluetooth-„Privacy“ (macht der Installer).
 - **Ein/Aus-Taste & HDMI-CEC** (`cec.py`, braucht `cec-ctl` aus v4l-utils): Ein/Aus kurz → RaspiTV schläft
   (Wiedergabe aus, Bild aus) und schaltet den Fernseher über HDMI-CEC in Standby; noch einmal kurz (oder jede andere
-  Taste) → Fernseher an und auf den RaspiTV-Eingang. Ein/Aus 1 s halten → „Ausschalten?“. Ein Raspberry Pi kann sich
+  Taste) → Fernseher an und auf den RaspiTV-Eingang. Home 1 s halten → kleines Menü: Ausschalten (wie kurz drücken), Herunterfahren, Neustarten. Ein Raspberry Pi kann sich
   nicht wirklich schlafen legen, RaspiTV ruht also nur. Auch der Sleep-Timer schaltet den Fernseher aus. Umgekehrt:
   Fernseher mit seiner Fernbedienung aus → RaspiTV schläft mit; RaspiTV-Eingang am Fernseher gewählt → wacht auf.
   Ohne CEC (Monitor) bleibt es beim Bild aus. Tasten-Codes prüfen: `RASPITV_KEYLOG=1 python3 raspitv.py`.

@@ -291,9 +291,9 @@ class Home(AccountsUI, JellyfinUI, SetupUI, QObject):
             else:
                 self.go_to_sleep()
             return
-        if key == "poweroff":  # Ein/Aus lang: Ausschalten anbieten
+        if key == "poweroff":  # Home lang: kleines Menü Ausschalten / Herunterfahren / Neustarten
             self.activity()
-            self.system("Ausschalten", "poweroff")
+            self.open_power_menu()
             return
         if self.activity():  # Taste weckt nur den Bildschirm auf
             self.push()
@@ -379,6 +379,18 @@ class Home(AccountsUI, JellyfinUI, SetupUI, QObject):
             run = items[self.menu["index"]][1]
             self.menu = None
             run()
+
+    def open_power_menu(self):
+        """Menü der Ein/Aus-Taste (lang gedrückt), mitten auf dem Bildschirm – auch aus einer App heraus."""
+        if self.mpv.running():
+            self.mpv.stop()
+        if self.running:
+            self.go_home()
+        self.dialog = self.osk = None
+        items = [("Ausschalten", self.go_to_sleep),
+                 ("Herunterfahren", lambda: self.system("Herunterfahren", "poweroff", ask=False)),
+                 ("Neustarten", lambda: self.system("Neu starten", "reboot", ask=False))]
+        self.menu = {"items": items, "index": 0, "title": "Ein/Aus", "anchor": "center", "at": 0}
 
     def start_moving(self):
         self.moving = True
@@ -530,7 +542,7 @@ class Home(AccountsUI, JellyfinUI, SetupUI, QObject):
                          start_new_session=True)
         QGuiApplication.quit()
 
-    def system(self, label, verb):
+    def system(self, label, verb, ask=True):
         """Neu starten / Ausschalten. Scheitert es (z. B. fehlt die Freigabe aus install.sh, dann will das
         System ein Passwort), eine Meldung zeigen statt still nichts zu tun."""
         def run():
@@ -551,7 +563,10 @@ class Home(AccountsUI, JellyfinUI, SetupUI, QObject):
                     self.dialog["sub"] = ("Es fehlt die Freigabe – einmal im Terminal ausführen: "
                                           "sudo ~/raspitv/boot/install-power-rule.sh")
             self.run_bg(work, done)
-        self.confirm(f"{label}?", label, run)
+        if ask:
+            self.confirm(f"{label}?", label, run)
+        else:
+            run()
 
     def tick(self):
         """Sekundentakt: merken, wenn der Player beendet wurde (die Uhr läuft in QML selbst)."""
