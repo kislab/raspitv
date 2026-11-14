@@ -58,6 +58,7 @@ Item {
                     : home.tileRect(s.menu.at)
     }
     Dialog { anchors.fill: parent; visible: !!s.dialog }
+    RemoteWait { anchors.fill: parent }
     Osk { anchors.fill: parent; visible: !!s.osk }
     PhonePair { anchors.fill: parent }
     Screensaver { anchors.fill: parent }

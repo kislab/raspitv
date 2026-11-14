@@ -38,7 +38,8 @@ Mediacenter für den Raspberry Pi 4 im Stil von Google TV – bedienbar mit der 
   Nach Geräten suchen, Fernbedienung in den Kopplungsmodus (Home ~10 s halten), „Koppeln“. RaspiTV liest sie
   selbst (`remote_input.py`, auch während Netflix & Co. laufen), hält die Verbindung mit einem „Herzschlag“
   (Akkustand lesen alle 30 s) wach, verbindet sie nach dem Einschlafen beim nächsten Tastendruck wieder – das
-  Wiederverbinden zählt als Tastendruck und weckt den Bildschirm – und beantwortet Kopplungsanfragen selbst (kein Desktop-Fenster). Symbol oben
+  Wiederverbinden zählt als Tastendruck und weckt den Bildschirm; solange sie getrennt ist (z. B. nach dem Neustart), steht
+  mittig „Fernbedienung wird verbunden – Bitte eine Taste drücken und kurz warten“ – und beantwortet Kopplungsanfragen selbst (kein Desktop-Fenster). Symbol oben
   rechts: hell = verbunden, durchgestrichen = schläft/getrennt; daneben der Akkustand, falls die Fernbedienung ihn
   meldet (BlueZ „Battery Percentage“), ab 15 % rot mit einmaligem Hinweis „Akku fast leer“. Nötig: Bluetooth-„Privacy“ (macht der Installer).
 - **Ein/Aus-Taste & HDMI-CEC** (`cec.py`, braucht `cec-ctl` aus v4l-utils): Ein/Aus kurz → RaspiTV schläft

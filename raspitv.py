@@ -129,7 +129,8 @@ class Home(AccountsUI, JellyfinUI, SetupUI, QObject):
         self.vol = {"value": 0, "muted": False, "seq": 0}  # Lautstärke-Anzeige (seq zählt Tastendrücke)
         self.last_input = time.monotonic()  # letzter Tastendruck (Bildschirmschoner, Bildschirm aus)
         self.cec = None                # HDMI-CEC (Fernseher ein/aus), siehe main
-        self.tv_off_at = 0.0           # wann der Fernseher sich per CEC abgemeldet hat
+        self.tv_off_at = 0.0
+        self.remote_lost = None        # seit wann die gekoppelte Fernbedienung getrennt ist           # wann der Fernseher sich per CEC abgemeldet hat
         self.saver = None              # None | "clock" (Bildschirmschoner) | "off" (Bildschirm aus)
         self.sleep_min = 0             # Sleep-Timer: gewählte Minuten (0 = aus)
         self.sleep_at = None           # … und wann er abläuft (monotonic)
@@ -164,6 +165,18 @@ class Home(AccountsUI, JellyfinUI, SetupUI, QObject):
     def height(self):
         return self.window.height() if self.window else 1080
 
+    def remote_wait(self):
+        """Hinweis „Fernbedienung wird verbunden“ zeigen? (gekoppelte Fernbedienung seit 2 s nicht verbunden,
+        z. B. nach dem Neustart – sie verbindet sich erst, wenn man eine Taste drückt)"""
+        if not self.remote_name or (self.remote_input and self.remote_input.open):
+            self.remote_lost = None
+            return False
+        if self.remote_lost is None:
+            self.remote_lost = time.monotonic()
+            QTimer.singleShot(2100, self.push)
+        return (time.monotonic() - self.remote_lost >= 2 and not self.running and not self.saver
+                and self.view != "setup")
+
     def push(self):
         """Schnappschuss des Zustands an QML geben (nur wenn sich etwas geändert hat)."""
         s = self.settings
@@ -186,6 +199,7 @@ class Home(AccountsUI, JellyfinUI, SetupUI, QObject):
             "allApps": [self.info[a["id"]] for a in self.all_apps],
             "hero": self.focused_app()["id"],
             "menu": menu, "dialog": dialog, "jf": self.jf_state(), "vol": self.vol,
+            "remoteWait": self.remote_wait(),
             "saver": self.saver, "sleep": self.sleep_left(), "toast": self.toast, "phone": self.phone_pair,
             "covered": bool(self.running and time.monotonic() - self.started > COVERED_AFTER),
             "settings": {"cats": [{k: c[k] for k in ("label", "icon", "desc")} for c in self.cats],
