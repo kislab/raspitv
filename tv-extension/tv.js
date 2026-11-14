@@ -596,6 +596,19 @@
     toastTimer = setTimeout(() => toast.classList.remove("tv-toast-on"), seconds * 1000);
   }
 
+  // Fernbedienung getrennt (z. B. nach dem Neustart): "remotewait:<sekunden>", RaspiTV erneuert es jede Sekunde.
+  const rwait = document.createElement("div");
+  rwait.id = "tv-remote-wait";
+  rwait.innerHTML = '<div><b>Fernbedienung wird verbunden</b><span>Bitte eine Taste drücken und kurz warten</span></div>';
+  let rwaitTimer = null;
+  function showRemoteWait(seconds) {
+    const host = document.fullscreenElement || document.documentElement;
+    if (rwait.parentNode !== host) host.append(rwait);
+    clearTimeout(rwaitTimer);
+    rwait.classList.toggle("tv-remote-wait-on", seconds > 0);
+    if (seconds) rwaitTimer = setTimeout(() => rwait.classList.remove("tv-remote-wait-on"), seconds * 1000);
+  }
+
   /** Nach „Senden“ vom Handy: ins nächste Feld des Formulars (E-Mail → Passwort) springen und dort gleich die
       Tastatur öffnen – nach dem letzten Feld das Formular abschicken (Anmelden per Handy in einem Rutsch). */
   function nextFieldOrSubmit(input) {
@@ -647,7 +660,10 @@
     const v = /^volume:(\d+):([01])$/.exec(message.key || "");
     const t = /^toast:(\d+):(.*)$/s.exec(message.key || "");
     const typed = /^text:([01]):(.*)$/s.exec(message.key || "");
-    if (typed) {
+    const rw = /^remotewait:(\d+)$/.exec(message.key || "");
+    if (rw) {
+      if (!inFrame) showRemoteWait(+rw[1]);
+    } else if (typed) {
       if (inFrame) return; // Handy-Text geht in die Tastatur des Hauptfensters
       typeText(typed[2], typed[1] === "1");
     } else if (inFrame) {

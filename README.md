@@ -39,7 +39,8 @@ Mediacenter für den Raspberry Pi 4 im Stil von Google TV – bedienbar mit der 
   selbst (`remote_input.py`, auch während Netflix & Co. laufen), hält die Verbindung mit einem „Herzschlag“
   (Akkustand lesen alle 30 s) wach, verbindet sie nach dem Einschlafen beim nächsten Tastendruck wieder – das
   Wiederverbinden zählt als Tastendruck und weckt den Bildschirm; solange sie getrennt ist (z. B. nach dem Neustart), steht
-  mittig „Fernbedienung wird verbunden – Bitte eine Taste drücken und kurz warten“ – und beantwortet Kopplungsanfragen selbst (kein Desktop-Fenster). Symbol oben
+  mittig „Fernbedienung wird verbunden – Bitte eine Taste drücken und kurz warten“ (auch über laufenden
+  Apps und dem Bildschirmschoner) – und beantwortet Kopplungsanfragen selbst (kein Desktop-Fenster). Symbol oben
   rechts: hell = verbunden, durchgestrichen = schläft/getrennt; daneben der Akkustand, falls die Fernbedienung ihn
   meldet (BlueZ „Battery Percentage“), ab 15 % rot mit einmaligem Hinweis „Akku fast leer“. Nötig: Bluetooth-„Privacy“ (macht der Installer).
 - **Ein/Aus-Taste & HDMI-CEC** (`cec.py`, braucht `cec-ctl` aus v4l-utils): Ein/Aus kurz → RaspiTV schläft
@@ -92,8 +93,10 @@ curl -fsSL https://raw.githubusercontent.com/kislab/raspitv/main/install.sh | ba
 
 Das fragt einmal nach dem sudo-Passwort, installiert, was die Oberfläche braucht (Python, Qt), lädt RaspiTV nach
 `~/raspitv` und öffnet den **Einrichtungs-Assistenten** auf dem Bildschirm – bedienbar mit Fernbedienung, Tastatur
-oder Handy: Willkommen → Benutzer anlegen → WLAN aussuchen → Auf Updates prüfen → Einrichten (Ladebalken) →
-Homescreen. Beim Einrichten (`boot/setup.sh`) kommen dazu: die übrigen Programme (`chromium`, `libwidevinecdm0`,
+oder Handy: **Fernbedienung koppeln** (zuerst; stellt dafür gleich Bluetooth ein und sucht nur per Bluetooth LE) →
+Willkommen → Benutzer anlegen → WLAN aussuchen → Auf Updates prüfen → Einrichten (Ladebalken) → Homescreen.
+Ist in einem Schritt etwas eingerichtet (Fernbedienung gekoppelt, Name bestätigt, WLAN verbunden), wird „Weiter“ blau
+und gleich ausgewählt. Beim Einrichten (`boot/setup.sh`) kommen dazu: die übrigen Programme (`chromium`, `libwidevinecdm0`,
 `mpv` …), Startmenü-Eintrag und Desktop-Symbole, Start beim Hochfahren (ohne Desktop und Terminal; ein Startbild
 mit dem RaspiTV-Logo verdeckt den Systemstart), das **RaspiTV-Bootbild**, Bluetooth für Fernbedienungen,
 Neustart/Ausschalten ohne Passwort und das **Entschlacken** von Raspberry Pi OS (`boot/slim.sh`, umkehrbar mit

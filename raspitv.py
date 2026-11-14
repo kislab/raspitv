@@ -130,7 +130,8 @@ class Home(AccountsUI, JellyfinUI, SetupUI, QObject):
         self.last_input = time.monotonic()  # letzter Tastendruck (Bildschirmschoner, Bildschirm aus)
         self.cec = None                # HDMI-CEC (Fernseher ein/aus), siehe main
         self.tv_off_at = 0.0
-        self.remote_lost = None        # seit wann die gekoppelte Fernbedienung getrennt ist           # wann der Fernseher sich per CEC abgemeldet hat
+        self.remote_lost = None        # seit wann die gekoppelte Fernbedienung getrennt ist
+        self.remote_hint_sent = False           # wann der Fernseher sich per CEC abgemeldet hat
         self.saver = None              # None | "clock" (Bildschirmschoner) | "off" (Bildschirm aus)
         self.sleep_min = 0             # Sleep-Timer: gewählte Minuten (0 = aus)
         self.sleep_at = None           # … und wann er abläuft (monotonic)
@@ -174,8 +175,23 @@ class Home(AccountsUI, JellyfinUI, SetupUI, QObject):
         if self.remote_lost is None:
             self.remote_lost = time.monotonic()
             QTimer.singleShot(2100, self.push)
-        return (time.monotonic() - self.remote_lost >= 2 and not self.running and not self.saver
-                and self.view != "setup")
+        return time.monotonic() - self.remote_lost >= 2 and self.saver != "off" and self.view != "setup"
+
+    REMOTE_WAIT = "Fernbedienung wird verbunden – bitte eine Taste drücken und kurz warten"
+
+    def sync_remote_hint(self):
+        """Den Hinweis auch über einer laufenden App zeigen (TV-Erweiterung bzw. Jellyfin-Player).
+        Läuft nach 3 s von selbst ab und wird darum jede Sekunde erneuert."""
+        wait = self.remote_wait()
+        if wait and self.player.running():
+            remote.notify("remotewait:3")
+        elif self.remote_hint_sent and self.player.running():
+            remote.notify("remotewait:0")
+        if wait and self.mpv.running():
+            self.mpv.show_toast(self.REMOTE_WAIT, 3)
+        elif self.remote_hint_sent and self.mpv.running():
+            self.mpv.show_toast("")
+        self.remote_hint_sent = wait
 
     def push(self):
         """Schnappschuss des Zustands an QML geben (nur wenn sich etwas geändert hat)."""
@@ -223,7 +239,7 @@ class Home(AccountsUI, JellyfinUI, SetupUI, QObject):
     @staticmethod
     def item_info(item):
         kind = item["kind"]
-        info = {"kind": kind, "label": item["label"], "hint": item.get("hint")}
+        info = {"kind": kind, "label": item["label"], "hint": item.get("hint"), "primary": bool(item.get("primary"))}
         if kind == "toggle":
             info["on"] = bool(item["value"]())
         elif kind in ("choice", "range"):
@@ -597,6 +613,7 @@ class Home(AccountsUI, JellyfinUI, SetupUI, QObject):
         now = time.monotonic()
         self.check_sleep(now)
         self.check_saver(now)
+        self.sync_remote_hint()
         if self.toast and now > self.toast_until:
             self.toast = None
         self.ticks += 1
@@ -629,7 +646,8 @@ class Home(AccountsUI, JellyfinUI, SetupUI, QObject):
 
     def bt_allow(self):
         """Darf der Bluetooth-Agent eine Kopplung annehmen? Nur auf der Bluetooth-Seite bzw. beim Koppeln."""
-        return self.sub == "bt" or time.monotonic() < self.pairing_until
+        return (self.sub == "bt" or time.monotonic() < self.pairing_until
+                or bool(self.setup and self.setup["step"] == "remote"))
 
     def remote_extra(self, key):
         """Tasten der Fernbedienung, die RaspiTV selbst erledigt (aus dem Lese-Thread)."""

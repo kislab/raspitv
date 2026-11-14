@@ -25,7 +25,9 @@ Item {
         x: -1.3 * app.u; y: 0.2 * app.u
         width: parent.width + 2.6 * app.u; height: parent.height - 0.4 * app.u
         radius: 0.9 * app.u
-        color: row.focused ? app.text : Qt.rgba(1, 1, 1, 0.05)
+        // „primary“: Weiter/Fertig, sobald im Schritt etwas eingerichtet ist (Einrichtungs-Assistent) – blau
+        color: row.item.primary ? (row.focused ? app.blue : Qt.rgba(0.54, 0.71, 0.97, 0.28))
+                                : row.focused ? app.text : Qt.rgba(1, 1, 1, 0.05)
         Behavior on color { ColorAnimation { duration: app.ms(120) } }
 
         readonly property color fg: row.focused ? app.dark : app.text

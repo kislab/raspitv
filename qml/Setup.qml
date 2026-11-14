@@ -29,7 +29,7 @@ Item {
         x: 3 * app.u; y: 12 * app.u
         spacing: 1.2 * app.u
         Repeater {
-            model: ["Willkommen", "Benutzer", "WLAN", "Updates", "Einrichten"]
+            model: ["Fernbedienung", "Willkommen", "Benutzer", "WLAN", "Updates", "Einrichten"]
             Row {
                 readonly property int idx: index
                 readonly property bool done: page.st && idx < page.st.index

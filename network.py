@@ -160,9 +160,12 @@ def bt_paired():
     return [dict(d, connected=d["mac"] in connected) for d in _devices("Paired")]
 
 
-def bt_scan(seconds=10):
-    """Nach neuen Geräten suchen; gefundene, noch nicht gekoppelte Geräte."""
-    _run(["bluetoothctl", "--timeout", str(seconds), "scan", "on"], timeout=seconds + 10)
+def bt_scan(seconds=10, le_only=False):
+    """Nach neuen Geräten suchen; gefundene, noch nicht gekoppelte Geräte.
+    le_only: nur Bluetooth Low Energy (Fernbedienungen). Die gemischte Suche kann BlueZ dazu bringen, eine
+    gekoppelte LE-Fernbedienung danach über klassisches Bluetooth zu verbinden – das klappt dann nie mehr
+    („br-connection-canceled“), bis Bluetooth neu startet."""
+    _run(["bluetoothctl", "--timeout", str(seconds), "scan", "le" if le_only else "on"], timeout=seconds + 10)
     paired = {d["mac"] for d in _devices("Paired")}
     return [d for d in _devices() if d["mac"] not in paired]
 

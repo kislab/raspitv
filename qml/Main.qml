@@ -58,10 +58,10 @@ Item {
                     : home.tileRect(s.menu.at)
     }
     Dialog { anchors.fill: parent; visible: !!s.dialog }
-    RemoteWait { anchors.fill: parent }
     Osk { anchors.fill: parent; visible: !!s.osk }
     PhonePair { anchors.fill: parent }
     Screensaver { anchors.fill: parent }
+    RemoteWait { anchors.fill: parent }  // auch über dem Bildschirmschoner
     VolumeOsd { anchors.fill: parent }
     Toast { anchors.fill: parent }
 

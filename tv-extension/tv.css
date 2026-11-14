@@ -221,3 +221,25 @@ html { scrollbar-width: none; scroll-behavior: smooth; }
 #tv-osk .tv-osk-qr canvas { width: 180px; height: 180px; border-radius: 10px; image-rendering: pixelated; }
 #tv-osk .tv-osk-qr-title { font-size: 20px; font-weight: 700; margin-top: 4px; }
 #tv-osk .tv-osk-qr-sub { font-size: 15px; color: #aaa; }
+
+/* ---------- Fernbedienung wird verbunden (wie in RaspiTV) ---------- */
+#tv-remote-wait {
+  --vu: 1.25vw;
+  position: fixed; inset: 0;
+  z-index: 2147483647;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+  opacity: 0; pointer-events: none;
+  transition: opacity 0.3s;
+  font-family: "Nunito Sans", Arial, sans-serif;
+}
+#tv-remote-wait.tv-remote-wait-on { opacity: 1; }
+#tv-remote-wait > div {
+  display: flex; flex-direction: column; align-items: center; gap: calc(var(--vu) * 0.9);
+  padding: calc(var(--vu) * 2.4) calc(var(--vu) * 4);
+  border-radius: calc(var(--vu) * 1.4);
+  background: rgb(32, 33, 40);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+#tv-remote-wait b { color: #fff; font-size: calc(var(--vu) * 1.5); font-weight: 700; }
+#tv-remote-wait span { color: rgba(255, 255, 255, 0.7); font-size: calc(var(--vu) * 1.1); }
